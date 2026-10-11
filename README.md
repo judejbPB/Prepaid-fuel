@@ -64,6 +64,8 @@ reversing entries.
 | Fuel confirmed | Employee reserved · Prepaid liability | Station clearing · Fuel revenue |
 | Reversal approved | Station clearing · Fuel revenue | Employee available · Prepaid liability |
 | Expiration | Unallocated / employee available · Prepaid liability | Company expired · Breakage |
+| Refund approved | Company unallocated · Prepaid liability | Company refunded · Refunds payable |
+| Refund paid | Refunds payable | Verified bank funds |
 
 **Daily balance rule** (checked on the dashboard and at `GET /api/ledger/check`):
 funded gallons = unallocated + employee available + reserved + redeemed + expired/refunded/adjusted.
@@ -85,6 +87,13 @@ funded gallons = unallocated + employee available + reserved + redeemed + expire
 - **Recurring monthly benefits** pause themselves when the funded balance can't cover the run.
 - **Shift close** compares digital redemptions with pump totals and POS; variance over tolerance holds the
   shift → manager explanation → distributor decision.
+- **Bank statement import** (CSV): credits whose description carries the funding reference (`TR-xxxx`) and
+  the exact amount are matched automatically; others wait in a queue for manual matching or "ignore".
+  Bank references can never fund two requests. The importer counts as the matcher, so a different person
+  still activates the lot.
+- **Refunds** of unused, unallocated gallons at the lot's contract price: company approver requests →
+  distributor approver approves (gallons leave the pool, liability becomes a payable) → treasury records the
+  outgoing transfer (must be a different person from the approver).
 - Full **audit log** of every action.
 
 ## Project layout
@@ -101,9 +110,21 @@ web/               React + Vite single-page app for all four surfaces
 `npm test` runs the server test suite. Configuration (lot validity, QR expiry, variance tolerance, PIN
 attempts) lives in `server/src/context.ts`.
 
+## Deploying
+
+```bash
+docker build -t bousol-fuel .
+docker run -d -p 8787:8787 -v bousol-data:/data \
+  -e ADMIN_LOGIN=you@yourco -e ADMIN_PASSWORD='a-long-passphrase' bousol-fuel
+```
+
+On first boot with an empty database the server creates the distributor admin from `ADMIN_LOGIN` /
+`ADMIN_PASSWORD` (12+ characters). Everything else (companies, prices, stations, terminals, staff) is set up
+from the control center. Put it behind HTTPS (e.g. a reverse proxy or your host's TLS) and back up the
+`/data` volume. Do **not** run `npm run seed` in production: it wipes the database and loads demo data.
+
 ## Not yet built (pilot follow-ups)
 - Biometric approval (WebAuthn) alongside PIN; native Android packaging for the station terminal.
-- Bank statement import / API for automatic deposit matching (matching is manual today).
-- Refund flow for unused prepaid funds (the ledger account exists; no workflow yet).
+- Direct bank API feed (statement import is CSV upload today).
 - SMS/WhatsApp notifications, CSV roster import, report exports.
-- Production hardening: Postgres, rate limiting, HTTPS, secrets management, backups, monitoring.
+- Production hardening: Postgres, rate limiting, secrets management, monitoring.

@@ -19,6 +19,7 @@ export const acct = {
   prepaidLiability: (companyId: number) => `co:${companyId}:prepaid_liability`,
   fuelRevenue: 'dist:fuel_revenue',
   breakage: 'dist:breakage',
+  refundsPayable: 'dist:refunds_payable',
 };
 
 /** Accounts that hold gallons and must never go negative at the lot level. */

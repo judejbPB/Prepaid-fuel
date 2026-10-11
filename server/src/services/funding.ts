@@ -55,6 +55,13 @@ export function matchFunding(ctx: Ctx, actor: Actor, id: number, input: { bankRe
     }
     const dup = ctx.db.get('SELECT reference FROM funding_requests WHERE bank_reference = ?', input.bankReference);
     if (dup) throw conflict('bank_ref_used', `Bank reference already matched to ${dup.reference}`);
+    // If the deposit came in through a statement import, the imported line must agree and gets linked.
+    const txn = ctx.db.get('SELECT * FROM bank_transactions WHERE bank_reference = ?', input.bankReference);
+    if (txn) {
+      if (txn.status !== 'unmatched') throw conflict('bank_ref_used', `Bank line ${txn.bank_reference} is ${txn.status}`);
+      if (txn.amount_minor !== f.amount_minor) throw conflict('amount_mismatch', 'Imported bank line amount differs from the expected amount');
+      ctx.db.run("UPDATE bank_transactions SET status = 'matched', funding_id = ? WHERE id = ?", id, txn.id);
+    }
     ctx.db.run(
       `UPDATE funding_requests SET status = 'matched', bank_reference = ?, bank_amount_minor = ?, matched_by = ?, matched_at = ?
         WHERE id = ?`,

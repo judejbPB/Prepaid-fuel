@@ -7,6 +7,8 @@ import type { Ctx } from './context.js';
 import { AppError } from './errors.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
+import * as bank from './services/bank.js';
+import * as refunds from './services/refunds.js';
 import * as exc from './services/exceptions.js';
 import * as funding from './services/funding.js';
 import * as red from './services/redemption.js';
@@ -145,6 +147,25 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     api.post('/api/funding/:id/approve', async (req) => funding.approveFunding(ctx, req.actor, params(req)));
     api.post('/api/funding/:id/reject', async (req) =>
       funding.rejectFunding(ctx, req.actor, params(req), body(z.object({ reason: z.string().min(2) }), req).reason));
+
+    // ---- bank statements
+    api.get('/api/bank/transactions', async (req) => bank.listBankTransactions(ctx, req.actor));
+    api.post('/api/bank/import', async (req) =>
+      bank.importStatement(ctx, req.actor, body(z.object({ csv: z.string().min(10).max(2_000_000) }), req).csv));
+    api.post('/api/bank/transactions/:id/match', async (req) =>
+      bank.matchTransaction(ctx, req.actor, params(req), body(z.object({ fundingId: id }), req).fundingId));
+    api.post('/api/bank/transactions/:id/ignore', async (req) =>
+      bank.ignoreTransaction(ctx, req.actor, params(req), body(z.object({ note: z.string().min(2) }), req).note));
+
+    // ---- refunds
+    api.get('/api/refunds', async (req) => refunds.listRefunds(ctx, req.actor));
+    api.post('/api/refunds', async (req) =>
+      refunds.requestRefund(ctx, req.actor, body(z.object({ lotId: id, gallons: z.number().positive(), reason: z.string().min(2) }), req)));
+    api.post('/api/refunds/:id/approve', async (req) => refunds.approveRefund(ctx, req.actor, params(req)));
+    api.post('/api/refunds/:id/reject', async (req) =>
+      refunds.rejectRefund(ctx, req.actor, params(req), body(z.object({ reason: z.string().min(2) }), req).reason));
+    api.post('/api/refunds/:id/pay', async (req) =>
+      refunds.payRefund(ctx, req.actor, params(req), body(z.object({ payoutReference: z.string().min(3) }), req).payoutReference));
 
     // ---- corporate portal
     api.get('/api/companies/:id/dashboard', async (req) => reports.companyDashboard(ctx, req.actor, params(req)));

@@ -282,3 +282,64 @@ describe('reconcile and exceptions', () => {
     expect(ctx.ledger.checkBalanceRule().ok).toBe(true);
   });
 });
+
+describe('bank statement import', () => {
+  it('auto-matches deposits by reference and amount, and still needs a second approver', async () => {
+    const bank = await import('../src/services/bank.js');
+    const f1 = funding.createFunding(ctx, t.preparer, { companyId: t.company.id, grade: 'diesel', amountMinor: 1_000_000 });
+    const f2 = funding.createFunding(ctx, t.preparer, { companyId: t.company.id, grade: 'diesel', amountMinor: 2_000_000 });
+    const csv = [
+      'Date,Reference,Description,Amount',
+      `2026-10-10,UNI-1,"Transfer ACME ${f1.reference}","10,000.00"`,
+      `2026-10-10,UNI-2,"ACME fuel ${f2.reference}",19999.00`,
+      '2026-10-10,UNI-3,Bank fee,-50.00',
+      '2026-10-10,UNI-4,No reference here,5000.00',
+    ].join('\n');
+    const out = bank.importStatement(ctx, t.treasury, csv);
+    expect(out).toMatchObject({ imported: 3, skipped: 1, matched: [f1.reference], unmatched: 2 });
+    expect(funding.getFunding(ctx, f1.id).status).toBe('matched');
+    expect(funding.getFunding(ctx, f2.id).status).toBe('awaiting_bank');
+    expect(bank.importStatement(ctx, t.treasury, csv).duplicates).toBe(3);
+
+    // The importer counts as matcher, so the activation needs someone else.
+    const treasuryAsApprover = { ...t.treasury, role: 'dist_admin' as const };
+    expect(() => funding.approveFunding(ctx, treasuryAsApprover, f1.id)).toThrow(/Maker-checker/);
+    expect(funding.approveFunding(ctx, t.approver, f1.id).status).toBe('approved');
+
+    // An unmatched line with the wrong amount cannot be force-linked.
+    const line = ctx.db.get("SELECT id FROM bank_transactions WHERE bank_reference = 'UNI-2'");
+    expect(() => bank.matchTransaction(ctx, t.treasury, line.id, f2.id)).toThrow(/does not equal/);
+  });
+
+  it('parses European and currency-prefixed amounts', async () => {
+    const { parseAmount } = await import('../src/services/bank.js');
+    expect(parseAmount('1.234,56')).toBe(123456);
+    expect(parseAmount('HTG 1,234.56')).toBe(123456);
+    expect(parseAmount('abc')).toBeNull();
+  });
+});
+
+describe('refunds', () => {
+  it('approve then pay, with maker-checker and ledger effects', async () => {
+    const refunds = await import('../src/services/refunds.js');
+    t.fundAndActivate('diesel', 100, 50000);
+    t.allocate(40);
+    const lot = ctx.db.get('SELECT id FROM lots LIMIT 1');
+    expect(() => refunds.requestRefund(ctx, t.coApprover, { lotId: lot.id, gallons: 61, reason: 'x' })).toThrow(/unallocated/);
+    const r = refunds.requestRefund(ctx, t.coApprover, { lotId: lot.id, gallons: 60, reason: 'Program ended' });
+    expect(r.amount_minor).toBe(3_000_000);
+    expect(() => refunds.requestRefund(ctx, t.coApprover, { lotId: lot.id, gallons: 1, reason: 'x' })).toThrow(/unallocated/);
+
+    const admin1 = actorFor(ctx.db, admin.createUser(ctx, null, { name: 'Boss', login: 'boss2@t', password: 'password1', role: 'dist_admin' }).id, null, null);
+    refunds.approveRefund(ctx, admin1, r.id);
+    expect(bal(acct.unallocated(t.company.id))).toBe(0);
+    expect(bal(acct.refunded(t.company.id))).toBe(60_000);
+    expect(bal(acct.refundsPayable)).toBe(3_000_000);
+    expect(() => refunds.payRefund(ctx, admin1, r.id, 'OUT-1')).toThrow(/Maker-checker/);
+    refunds.payRefund(ctx, t.treasury, r.id, 'OUT-1');
+    expect(bal(acct.refundsPayable)).toBe(0);
+    expect(-bal(acct.bankVerified)).toBe(2_000_000);
+    expect(bal(acct.prepaidLiability(t.company.id))).toBe(2_000_000);
+    expect(ctx.ledger.checkBalanceRule().ok).toBe(true);
+  });
+});

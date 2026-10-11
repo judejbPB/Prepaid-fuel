@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import { api, cap, date, gal, money, when } from '../api';
 import { Authed, Empty, Kpi, Modal, PageHead, Shell, Status, useAction, useLoad, useMe } from '../ui';
+import { BankStatements, RefundsTable } from './finance';
 import { ExceptionsPanel } from './shared';
 
 const d = api('distributor');
@@ -10,13 +11,16 @@ export default function Distributor() {
   return (
     <Authed surface="distributor">
       <Shell surface="distributor" nav={[
-        ['/distributor', 'Overview'], ['/distributor/funding', 'Funding queue'], ['/distributor/exceptions', 'Exceptions'],
+        ['/distributor', 'Overview'], ['/distributor/funding', 'Funding queue'], ['/distributor/bank', 'Bank statements'],
+        ['/distributor/refunds', 'Refunds'], ['/distributor/exceptions', 'Exceptions'],
         ['/distributor/shifts', 'Shift reconciliation'], ['/distributor/network', 'Clients & stations'],
         ['/distributor/ledger', 'Ledger'], ['/distributor/audit', 'Audit log'],
       ]}>
         <Routes>
           <Route index element={<Overview />} />
           <Route path="funding" element={<Funding />} />
+          <Route path="bank" element={<BankStatements />} />
+          <Route path="refunds" element={<Refunds />} />
           <Route path="exceptions" element={<><PageHead eyebrow="Controls" title="Exceptions" /><ExceptionsPanel surface="distributor" /></>} />
           <Route path="shifts" element={<Shifts />} />
           <Route path="network" element={<Network />} />
@@ -63,6 +67,14 @@ function Overview() {
           </tbody></table>
         </div>
       </div>
+      {k.unmatched_bank_lines > 0 && (
+        <div className="banner mt"><span className="grow">{k.unmatched_bank_lines} imported bank line(s) could not be matched to a funding reference.</span>
+          <Link to="/distributor/bank"><button className="sm">Match</button></Link></div>
+      )}
+      {k.refunds_pending > 0 && (
+        <div className="banner mt"><span className="grow">{k.refunds_pending} refund(s) awaiting approval or payout · {money(k.refunds_payable_minor)} payable.</span>
+          <Link to="/distributor/refunds"><button className="sm">Review</button></Link></div>
+      )}
       {alert && (
         <div className="banner mt"><span>⚠</span><span className="grow">{alert.summary}</span>
           <Link to="/distributor/exceptions"><button className="sm">Review</button></Link></div>
@@ -418,7 +430,7 @@ function Ledger() {
               const debits = e.lines.filter((l: any) => l.debit > 0);
               const credits = e.lines.filter((l: any) => l.credit > 0);
               const fmt = (l: any, v: number) => (
-                <div key={l.id} className="small">{label(l.account)}{l.lot_code ? <span className="muted"> [{l.lot_code}]</span> : ''} <b className="num">{l.unit === 'mgal' ? `${gal(v, 1)} gal` : money(v, l.unit)}</b></div>
+                <div key={l.id} className="small">{l.account_label ?? label(l.account)}{l.lot_code ? <span className="muted"> [{l.lot_code}]</span> : ''} <b className="num">{l.unit === 'mgal' ? `${gal(v, 1)} gal` : money(v, l.unit)}</b></div>
               );
               return (
                 <tr key={e.id}><td>{e.id}</td><td><b>{cap(e.kind.replace(/_/g, ' '))}</b>{e.company_name && <div className="small muted">{e.company_name}</div>}</td>
@@ -449,6 +461,18 @@ function Audit() {
           </tbody>
         </table>
       </div>
+    </>
+  );
+}
+
+function Refunds() {
+  return (
+    <>
+      <PageHead eyebrow="Treasury" title="Refunds of unused prepaid gallons" />
+      <div className="banner" style={{ marginBottom: 16 }}>
+        <span className="grow small">Approving a refund removes the gallons from the company pool and books a refund payable. Treasury then records the outgoing transfer; the approver can’t record the payout.</span>
+      </div>
+      <RefundsTable surface="distributor" />
     </>
   );
 }

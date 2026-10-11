@@ -47,6 +47,9 @@ export function distributorDashboard(ctx: Ctx, actor: Actor) {
       bank_verified_minor: -ctx.ledger.balance(acct.bankVerified),
       revenue_minor: ctx.ledger.balance(acct.fuelRevenue),
       breakage_minor: ctx.ledger.balance(acct.breakage),
+      refunds_payable_minor: ctx.ledger.balance(acct.refundsPayable),
+      unmatched_bank_lines: ctx.db.get("SELECT COUNT(*) AS n FROM bank_transactions WHERE status = 'unmatched'").n,
+      refunds_pending: ctx.db.get("SELECT COUNT(*) AS n FROM refunds WHERE status IN ('requested','approved')").n,
     },
     funding_queue: funding.slice(0, 12),
     redemptions_today: redemptionsToday,
@@ -122,12 +125,35 @@ export function journal(ctx: Ctx, actor: Actor, companyId?: number) {
       ${companyId ? 'WHERE je.company_id = ?' : ''} ORDER BY je.id DESC LIMIT 150`,
     ...(companyId ? [companyId] : []),
   );
+  const label = accountLabeler(ctx);
   return entries.map((e) => ({
     ...e,
-    lines: ctx.db.all(
-      'SELECT jl.*, l.code AS lot_code FROM journal_lines jl LEFT JOIN lots l ON l.id = jl.lot_id WHERE entry_id = ? ORDER BY jl.id', e.id,
-    ),
+    lines: ctx.db
+      .all('SELECT jl.*, l.code AS lot_code FROM journal_lines jl LEFT JOIN lots l ON l.id = jl.lot_id WHERE entry_id = ? ORDER BY jl.id', e.id)
+      .map((l) => ({ ...l, account_label: label(l.account) })),
   }));
+}
+
+const ACCOUNT_NAMES: Record<string, string> = {
+  issued: 'issued gallons', unallocated: 'unallocated gallons', available: 'available gallons', reserved: 'reserved gallons',
+  clearing: 'station clearing', expired: 'expired gallons', refunded: 'refunded gallons', adjustment: 'adjustments',
+  prepaid_liability: 'prepaid liability', bank_verified: 'verified bank funds', fuel_revenue: 'fuel revenue',
+  breakage: 'breakage', refunds_payable: 'refunds payable',
+};
+
+/** Turns account keys like `emp:3:available` into "Paul D. · available gallons". */
+export function accountLabeler(ctx: Ctx) {
+  const names = {
+    co: new Map(ctx.db.all('SELECT id, name FROM companies').map((r) => [String(r.id), r.name])),
+    emp: new Map(ctx.db.all('SELECT id, name FROM employees').map((r) => [String(r.id), r.name])),
+    stn: new Map(ctx.db.all('SELECT id, name FROM stations').map((r) => [String(r.id), r.name])),
+  };
+  return (account: string) => {
+    const [kind, idOrName, sub] = account.split(':');
+    if (kind === 'dist') return `Distributor · ${ACCOUNT_NAMES[idOrName] ?? idOrName}`;
+    const owner = names[kind as 'co' | 'emp' | 'stn']?.get(idOrName) ?? `${kind} ${idOrName}`;
+    return `${owner} · ${ACCOUNT_NAMES[sub] ?? sub}`;
+  };
 }
 
 export function stationOverview(ctx: Ctx, actor: Actor, stationId: number) {

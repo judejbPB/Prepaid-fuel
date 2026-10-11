@@ -3,6 +3,7 @@ import { Route, Routes, useNavigate } from 'react-router-dom';
 import { api, cap, date, gal, money, when } from '../api';
 import { Authed, Empty, Kpi, Modal, PageHead, Shell, Status, useAction, useLoad, useMe } from '../ui';
 import { NewFundingModal } from './Distributor';
+import { RefundsTable } from './finance';
 
 const c = api('corporate');
 
@@ -32,6 +33,8 @@ function Overview() {
   const me = useMe();
   const { data, reload } = useDashboard();
   const [funding, setFunding] = useState(false);
+  const [refunding, setRefunding] = useState<any>(null);
+  const [refundKey, setRefundKey] = useState(0);
   if (!data) return null;
   const k = data.kpis;
   return (
@@ -58,16 +61,20 @@ function Overview() {
         </div>
         <div className="card white">
           <h2>Fuel lots</h2>
-          <table><thead><tr><th>Lot</th><th>Grade</th><th className="r">Funded</th><th className="r">Unallocated</th><th>Expires</th></tr></thead><tbody>
+          <table><thead><tr><th>Lot</th><th>Grade</th><th className="r">Funded</th><th className="r">Unallocated</th><th>Expires</th><th></th></tr></thead><tbody>
             {data.lots.map((l: any) => (
               <tr key={l.id}><td className="mono">{l.code}</td><td>{cap(l.grade)}</td><td className="r num">{gal(l.gallons_mgal)}</td>
-                <td className="r num">{gal(l.unallocated_mgal)}</td><td>{date(l.expires_on)} {l.status !== 'active' && <Status s={l.status} />}</td></tr>
+                <td className="r num">{gal(l.unallocated_mgal)}</td><td>{date(l.expires_on)} {l.status !== 'active' && <Status s={l.status} />}</td>
+                <td className="r">{me.role === 'co_approver' && l.status === 'active' && l.unallocated_mgal > 0 && <button className="sm ghost" onClick={() => setRefunding(l)}>Refund</button>}</td></tr>
             ))}
           </tbody></table>
           {!data.lots.length && <Empty>Lots appear once your deposit is verified and activated.</Empty>}
           <p className="small muted" style={{ marginTop: 8 }}>Contract prices: {data.contracts.map((p: any) => `${cap(p.grade)} ${money(p.price_minor, p.currency)}/gal`).join(' · ')}</p>
         </div>
       </div>
+      <h2 className="mt2" style={{ marginBottom: 12 }}>Refunds</h2>
+      <RefundsTable key={refundKey} surface="corporate" />
+      {refunding && <RequestRefund lot={refunding} onClose={() => setRefunding(null)} onDone={() => { setRefunding(null); setRefundKey((n) => n + 1); reload(); }} />}
       {funding && <NewFundingModal surface="corporate" companyId={me.companyId!} onClose={() => setFunding(false)} onDone={() => { setFunding(false); reload(); }} />}
     </>
   );
@@ -323,5 +330,25 @@ function Statement() {
         </table>
       </div>
     </>
+  );
+}
+
+function RequestRefund({ lot, onClose, onDone }: { lot: any; onClose: () => void; onDone: () => void }) {
+  const [gallons, setGallons] = useState(String(lot.unallocated_mgal / 1000));
+  const [reason, setReason] = useState('');
+  const { busy, run } = useAction();
+  const value = (Number(gallons) || 0) * lot.price_minor;
+  return (
+    <Modal title={`Refund from ${lot.code}`} onClose={onClose}>
+      <div className="stack">
+        <p className="small muted">Only unallocated gallons can be refunded, at the price they were funded at ({money(lot.price_minor, lot.currency)}/gal). The distributor approves, then pays out by bank transfer.</p>
+        <label>Gallons (max {gal(lot.unallocated_mgal, 1)})<input type="number" step="0.1" value={gallons} onChange={(e) => setGallons(e.target.value)} /></label>
+        <div className="kv"><span>Refund amount</span><b>{money(value, lot.currency)}</b></div>
+        <label>Reason<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+        <button disabled={busy || !(Number(gallons) > 0) || reason.length < 2} onClick={async () => {
+          if (await run(() => c.post('/api/refunds', { lotId: lot.id, gallons: Number(gallons), reason }), 'Refund requested')) onDone();
+        }}>Request refund</button>
+      </div>
+    </Modal>
   );
 }

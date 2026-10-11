@@ -100,6 +100,44 @@ CREATE TABLE IF NOT EXISTS funding_requests (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS funding_bank_ref ON funding_requests(bank_reference) WHERE bank_reference IS NOT NULL;
 
+-- Lines imported from bank statements. Each one can fund at most one request.
+CREATE TABLE IF NOT EXISTS bank_transactions (
+  id INTEGER PRIMARY KEY,
+  bank_reference TEXT NOT NULL UNIQUE,
+  value_date TEXT,
+  amount_minor INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'HTG',
+  memo TEXT,
+  status TEXT NOT NULL DEFAULT 'unmatched' CHECK (status IN ('unmatched','matched','ignored')),
+  note TEXT,
+  funding_id INTEGER UNIQUE REFERENCES funding_requests(id),
+  imported_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Refund of unused prepaid gallons: requested by the company, approved by the distributor,
+-- then paid out by treasury (a different person from the approver).
+CREATE TABLE IF NOT EXISTS refunds (
+  id INTEGER PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id),
+  lot_id INTEGER NOT NULL REFERENCES lots(id),
+  gallons_mgal INTEGER NOT NULL CHECK (gallons_mgal > 0),
+  amount_minor INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','approved','paid','rejected')),
+  requested_by INTEGER NOT NULL REFERENCES users(id),
+  approved_by INTEGER REFERENCES users(id),
+  paid_by INTEGER REFERENCES users(id),
+  payout_reference TEXT UNIQUE,
+  approve_entry_id INTEGER REFERENCES journal_entries(id),
+  paid_entry_id INTEGER REFERENCES journal_entries(id),
+  reject_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT,
+  paid_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS lots (
   id INTEGER PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,
