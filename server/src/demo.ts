@@ -32,9 +32,9 @@ export function seedDemo(ctx: Ctx) {
     user(['M. Pierre', 'A. Louis', 'R. Joseph', 'K. Charles'][i], `attendant${i + 1}@bousol`, 'st_attendant', { stationId: s.id }));
   const managers = stations.map((s, i) => user(`Manager Station ${i + 1}`, `manager${i + 1}@bousol`, 'st_manager', { stationId: s.id }));
 
-  // Corporate clients and contract prices (HTG per gallon, in minor units)
+  // Corporate clients. Balances are in HTG; contract prices per gallon convert to reference gallons.
   const companies = ['Company A', 'Company B', 'Company C'].map((name) => {
-    const c = admin.createCompany(ctx, null, { name, approvalThresholdGallons: 300 });
+    const c = admin.createCompany(ctx, null, { name, approvalThreshold: 200_000 });
     admin.setContractPrice(ctx, null, { companyId: c.id, grade: 'diesel', priceMinor: 66500 });
     admin.setContractPrice(ctx, null, { companyId: c.id, grade: 'gasoline', priceMinor: 57000 });
     return c;
@@ -58,24 +58,23 @@ export function seedDemo(ctx: Ctx) {
   // Jean P. and Marie L. already have a PIN; everyone else sets theirs on first sign-in.
   for (const e of employees.slice(0, 2)) db.run('UPDATE employees SET pin_hash = ? WHERE id = ?', hashSecret(DEMO_PIN), e.id);
 
-  // Funding: Company A has two activated lots; B awaits the bank; C is matched and needs the second approver.
-  const fund = (companyId: number, grade: string, gallons: number, price: number) =>
-    funding.createFunding(ctx, as(distAdmin.id), { companyId, grade, amountMinor: gallons * price });
-  const a1 = fund(coA.id, 'diesel', 4000, 66500);
-  const a2 = fund(coA.id, 'gasoline', 2500, 57000);
+  // Funding (HTG): Company A has two activated lots; B awaits the bank; C is matched and needs the second approver.
+  const fund = (companyId: number, htg: number) =>
+    funding.createFunding(ctx, as(distAdmin.id), { companyId, amountMinor: htg * 100 });
+  const a1 = fund(coA.id, 2_500_000);
+  const a2 = fund(coA.id, 1_500_000);
   for (const [i, f] of [a1, a2].entries()) {
     funding.matchFunding(ctx, as(treasury.id), f.id, { bankReference: `UNIBANK-55${i}10`, bankAmountMinor: f.amount_minor });
     funding.approveFunding(ctx, as(approver.id), f.id);
   }
-  fund(coB.id, 'diesel', 3000, 66500);
-  const c1 = fund(coC.id, 'gasoline', 1500, 57000);
+  fund(coB.id, 2_000_000);
+  const c1 = fund(coC.id, 1_000_000);
   funding.matchFunding(ctx, as(treasury.id), c1.id, { bankReference: 'SOGEBANK-77812', bankAmountMinor: c1.amount_minor });
 
   // A posted allocation (approved by a second person) that also became the recurring monthly benefit.
-  const fuelOf = (i: number) => (employees[i].dept === 'Ops' || employees[i].dept === 'Logistics' ? 'diesel' : 'gasoline');
   const posted = alloc.createBatch(ctx, as(prepA.id), {
     companyId: coA.id, title: 'Monthly fuel benefit',
-    lines: employees.map((e, i) => ({ employeeId: e.id, grade: fuelOf(i), gallons: i === 0 ? 120 : 60 })),
+    lines: employees.map((e, i) => ({ employeeId: e.id, amount: i === 0 ? 80_000 : 40_000 })),
   });
   alloc.submitBatch(ctx, as(prepA.id), posted.id);
   alloc.approveBatch(ctx, as(apprA.id), posted.id);
@@ -85,10 +84,10 @@ export function seedDemo(ctx: Ctx) {
   alloc.createBatch(ctx, as(prepA.id), {
     companyId: coA.id, title: 'Field trip top-up',
     lines: [
-      { employeeId: employees[0].id, grade: 'diesel', gallons: 30 },
-      { employeeId: employees[1].id, grade: 'gasoline', gallons: 30 },
-      { employeeId: employees[2].id, grade: 'diesel', gallons: 30 },
-      { employeeId: dup.id, grade: 'gasoline', gallons: 30 },
+      { employeeId: employees[0].id, amount: 20_000 },
+      { employeeId: employees[1].id, amount: 20_000 },
+      { employeeId: employees[2].id, amount: 20_000 },
+      { employeeId: dup.id, amount: 20_000 },
     ],
   });
 
@@ -96,11 +95,14 @@ export function seedDemo(ctx: Ctx) {
   const st1 = stations[0];
   const att1 = as(attendants[0].id, { terminalId: st1.terminalId });
   red.openShift(ctx, att1);
-  const fuelings: [number, string, number][] = [[0, 'diesel', 12], [1, 'gasoline', 8.5], [0, 'diesel', 20]];
-  for (const [i, [empIdx, grade, gal]] of fuelings.entries()) {
-    const r = red.createRequest(ctx, att1, { grade, pump: i + 1, gallons: gal });
+  // Attendants can ask by quantity (pump preset in gallons) or by amount ("5,000 gourdes").
+  const fuelings: [number, string, red.Quantity][] = [
+    [0, 'diesel', { gallons: 12 }], [1, 'gasoline', { amount: 5_000 }], [0, 'diesel', { gallons: 20 }],
+  ];
+  for (const [i, [empIdx, grade, qty]] of fuelings.entries()) {
+    const r = red.createRequest(ctx, att1, { grade, pump: i + 1, ...qty });
     red.approveRequest(ctx, as(employees[empIdx].user_id), { code: r.code, pin: DEMO_PIN });
-    red.completeRequest(ctx, att1, r.id, gal);
+    red.completeRequest(ctx, att1, r.id, qty);
   }
 
   return {

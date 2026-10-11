@@ -36,15 +36,15 @@ function Overview() {
   const { data } = useLoad(() => d.get('/api/distributor/dashboard'), [], 10000);
   if (!data) return null;
   const k = data.kpis;
-  const max = Math.max(1, ...data.redemptions_today.map((r: any) => r.mgal));
+  const max = Math.max(1, ...data.sales_today.map((r: any) => r.minor));
   const alert = data.alerts[0];
   return (
     <>
-      <PageHead eyebrow="Distributor control center" title="One view of funds, gallons and exceptions" />
+      <PageHead eyebrow="Distributor control center" title="One view of funds, fuel sales and exceptions" />
       <div className="grid g4">
         <Kpi label="Deposits verified" value={k.deposits_verified} sub={money(k.bank_verified_minor)} />
-        <Kpi label="Gallons owed" value={gal(k.gallons_owed_mgal)} sub="Unallocated + employee balances" />
-        <Kpi label="Gallons allocated" value={gal(k.gallons_allocated_mgal)} sub="In employee wallets" />
+        <Kpi label="Prepaid owed" value={money(k.prepaid_owed_minor)} sub="Unallocated + employee balances" />
+        <Kpi label="In employee wallets" value={money(k.allocated_minor)} sub={`${money(k.redeemed_minor)} redeemed to date`} />
         <Kpi label="Open exceptions" value={k.open_exceptions} bad={k.open_exceptions > 0} />
       </div>
       <div className="grid g2 mt">
@@ -57,12 +57,12 @@ function Overview() {
           </tbody></table>
         </div>
         <div className="card">
-          <h2>Redemptions today (gal)</h2>
+          <h2>Fuel sales today</h2>
           <table><tbody>
-            {data.redemptions_today.map((s: any) => (
+            {data.sales_today.map((s: any) => (
               <tr key={s.id}><td style={{ width: 90 }}>{s.name}</td>
-                <td><div className="bar"><div style={{ width: `${(s.mgal / max) * 100}%` }} /></div></td>
-                <td className="r num" style={{ width: 70 }}><b>{gal(s.mgal)}</b></td></tr>
+                <td><div className="bar"><div style={{ width: `${(s.minor / max) * 100}%` }} /></div></td>
+                <td className="r num" style={{ width: 150 }}><b>{money(s.minor)}</b><div className="small muted">{gal(s.mgal, 1)} gal</div></td></tr>
             ))}
           </tbody></table>
         </div>
@@ -81,19 +81,19 @@ function Overview() {
       )}
       <div className={`banner mt ${data.balance_rule.ok ? 'ok' : 'bad'}`}>
         <span className="grow">
-          <b>Daily balance rule</b> — funded gallons = unallocated + employee available + reserved + redeemed + expired/refunded/adjusted.
+          <b>Daily balance rule</b> — cleared funds = unallocated + employee available + reserved + redeemed + expired + refunded, per lot.
           {' '}{data.balance_rule.ok ? `Holds across ${data.balance_rule.lotsChecked} lots.` : `${data.balance_rule.issues.length} issue(s) found.`}
         </span>
       </div>
       <div className="card white mt">
         <h2>Corporate clients</h2>
         <div className="table-wrap"><table>
-          <thead><tr><th>Company</th><th>Status</th><th className="r">Unallocated</th><th className="r">In wallets</th><th className="r">Redeemed</th><th className="r">Prepaid liability</th><th>Contract prices</th></tr></thead>
+          <thead><tr><th>Company</th><th>Status</th><th className="r">Unallocated</th><th className="r">In wallets</th><th className="r">Redeemed</th><th>Contract prices</th></tr></thead>
           <tbody>
             {data.companies.map((c: any) => (
               <tr key={c.id}><td><b>{c.name}</b></td><td><Status s={c.status} /></td>
-                <td className="r num">{gal(c.unallocated_mgal)}</td><td className="r num">{gal(c.allocated_mgal)}</td>
-                <td className="r num">{gal(c.redeemed_mgal, 1)}</td><td className="r num">{money(c.liability_minor)}</td>
+                <td className="r num">{money(c.unallocated_minor)}</td><td className="r num">{money(c.allocated_minor)}</td>
+                <td className="r num">{money(c.redeemed_minor)}</td>
                 <td className="small">{c.contracts.map((p: any) => `${cap(p.grade)} ${money(p.price_minor, p.currency)}/gal`).join(' · ')}</td></tr>
             ))}
           </tbody>
@@ -126,12 +126,12 @@ function Funding() {
       </div>
       <div className="card white table-wrap">
         <table>
-          <thead><tr><th>Reference</th><th>Company</th><th>Grade</th><th className="r">Amount</th><th className="r">Gallons</th><th>Bank ref</th><th>Status</th><th>Lot</th><th></th></tr></thead>
+          <thead><tr><th>Reference</th><th>Company</th><th className="r">Amount</th><th>Bank ref</th><th>Status</th><th>Lot</th><th></th></tr></thead>
           <tbody>
             {data?.map((f: any) => (
               <tr key={f.id}>
-                <td className="mono">{f.reference}</td><td>{f.company_name}</td><td>{cap(f.grade)}</td>
-                <td className="r num">{money(f.amount_minor, f.currency)}</td><td className="r num">{gal(f.gallons_mgal)}</td>
+                <td className="mono">{f.reference}</td><td>{f.company_name}</td>
+                <td className="r num">{money(f.amount_minor, f.currency)}</td>
                 <td className="small">{f.bank_reference ?? '—'}{f.matched_by_name && <div className="muted">by {f.matched_by_name}</div>}</td>
                 <td><Status s={f.status} />{f.reject_reason && <div className="small muted">{f.reject_reason}</div>}</td>
                 <td className="mono">{f.lot_code ?? '—'}</td>
@@ -166,7 +166,7 @@ function MatchModal({ f, onClose, onDone }: { f: any; onClose: () => void; onDon
   return (
     <Modal title={`Match ${f.reference}`} onClose={onClose}>
       <div className="stack">
-        <p className="small muted">{f.company_name} expects {money(f.amount_minor, f.currency)} for {gal(f.gallons_mgal)} gal {f.grade}.</p>
+        <p className="small muted">{f.company_name} announced a transfer of {money(f.amount_minor, f.currency)}.</p>
         <label>Bank transaction reference<input value={bankReference} onChange={(e) => setRef(e.target.value)} placeholder="e.g. UNIBANK-55120" /></label>
         <label>Cleared amount ({f.currency})<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
         <button disabled={busy || bankReference.length < 3} onClick={submit}>Confirm match</button>
@@ -179,12 +179,11 @@ export function NewFundingModal({ onClose, onDone, companyId, surface = 'distrib
   const client = api(surface);
   const companies = useLoad(() => (companyId ? Promise.resolve([]) : client.get('/api/companies')), []);
   const [cid, setCid] = useState<number | ''>(companyId ?? '');
-  const [grade, setGrade] = useState('diesel');
   const [amount, setAmount] = useState('');
   const [created, setCreated] = useState<any>(null);
   const { busy, run } = useAction();
   const submit = async () => {
-    const out = await run(() => client.post('/api/funding', { companyId: Number(cid), grade, amountMinor: Math.round(Number(amount) * 100) }));
+    const out = await run(() => client.post('/api/funding', { companyId: Number(cid), amountMinor: Math.round(Number(amount) * 100) }));
     if (out) setCreated(out);
   };
   if (created) {
@@ -194,8 +193,7 @@ export function NewFundingModal({ onClose, onDone, companyId, surface = 'distrib
           <p>Pay by bank transfer and put this reference in the transfer memo:</p>
           <div className="code" style={{ fontSize: 32 }}>{created.reference}</div>
           <div className="kv"><span>Amount</span><b>{money(created.amount_minor, created.currency)}</b></div>
-          <div className="kv"><span>Buys</span><b>{gal(created.gallons_mgal, 1)} gal {created.grade} at {money(created.price_minor, created.currency)}/gal</b></div>
-          <p className="small muted">Gallons become available once treasury verifies the deposit and a second approver activates the lot.</p>
+          <p className="small muted">The money becomes available to allocate once treasury verifies the deposit and a second approver activates it.</p>
           <button onClick={onDone}>Done</button>
         </div>
       </Modal>
@@ -212,11 +210,6 @@ export function NewFundingModal({ onClose, onDone, companyId, surface = 'distrib
             </select>
           </label>
         )}
-        <label>Grade
-          <select value={grade} onChange={(e) => setGrade(e.target.value)}>
-            <option value="diesel">Diesel</option><option value="gasoline">Gasoline</option><option value="premium">Premium</option>
-          </select>
-        </label>
         <label>Transfer amount (HTG)<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
         <button disabled={busy || !cid || !(Number(amount) > 0)} onClick={submit}>Create reference</button>
       </div>
@@ -231,15 +224,16 @@ function Shifts() {
       <PageHead eyebrow="Step 05 · Reconcile" title="Shift reconciliation" />
       <div className="card white table-wrap">
         <table>
-          <thead><tr><th>#</th><th>Station</th><th>Terminal</th><th>Attendant</th><th>Opened</th><th>Closed</th><th className="r">Digital</th><th className="r">Pump</th><th className="r">Variance</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th>Station</th><th>Terminal</th><th>Attendant</th><th>Opened</th><th>Closed</th><th className="r">Charged</th><th className="r">POS</th><th className="r">Variance</th><th className="r">Pump gal var.</th><th>Status</th></tr></thead>
           <tbody>
             {data?.map((s: any) => {
-              const sum = (j: string | null) => (j ? Object.values(JSON.parse(j) as Record<string, number>).reduce((a, b) => a + b, 0) : null);
+              const total = (o: Record<string, number>) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
               return (
                 <tr key={s.id}><td>{s.id}</td><td>{s.station_name}</td><td>{s.terminal_label}</td><td>{s.attendant_name}</td>
                   <td>{when(s.opened_at)}</td><td>{when(s.closed_at)}</td>
-                  <td className="r num">{s.digital_json ? gal(sum(s.digital_json), 1) : '—'}</td>
-                  <td className="r num">{s.pump_json ? gal(sum(s.pump_json), 1) : '—'}</td>
+                  <td className="r num">{s.digital_json ? money(total(JSON.parse(s.digital_json).amounts)) : '—'}</td>
+                  <td className="r num">{s.pos_json ? money(total(JSON.parse(s.pos_json))) : '—'}</td>
+                  <td className="r num">{s.variance_minor != null ? money(s.variance_minor) : '—'}</td>
                   <td className="r num">{s.variance_mgal != null ? gal(s.variance_mgal, 1) : '—'}</td>
                   <td><Status s={s.status} />{s.manager_note && <div className="small muted">{s.manager_note}</div>}</td></tr>
               );
@@ -289,7 +283,7 @@ function Network() {
             {companies.data?.companies.map((c: any) => (
               <tr key={c.id}><td><b>{c.name}</b></td><td><Status s={c.status} /></td>
                 <td className="small">{c.contracts.map((p: any) => `${cap(p.grade)} ${money(p.price_minor, p.currency)}`).join(' · ') || '—'}</td>
-                <td className="r num">{gal(c.approval_threshold_mgal)} gal</td>
+                <td className="r num">{money(c.approval_threshold_minor)}</td>
                 <td className="r"><div className="row" style={{ justifyContent: 'flex-end' }}>
                   {isAdmin && <button className="sm secondary" onClick={() => setModal({ kind: 'price', data: c })}>Set price</button>}
                   <FreezeBtn entity="company" row={c} /></div></td></tr>
@@ -316,13 +310,13 @@ function Network() {
         </table>
       </div>
       <div className="card white table-wrap mt">
-        <h2>Fuel lots</h2>
+        <h2>Funded lots</h2>
         <table>
-          <thead><tr><th>Lot</th><th>Company</th><th>Grade</th><th className="r">Gallons</th><th className="r">Price/gal</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Lot</th><th>Company</th><th className="r">Cleared amount</th><th>Expires</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {lots.data?.map((l: any) => (
-              <tr key={l.id}><td className="mono">{l.code}</td><td>{l.company_name}</td><td>{cap(l.grade)}</td>
-                <td className="r num">{gal(l.gallons_mgal)}</td><td className="r num">{money(l.price_minor, l.currency)}</td>
+              <tr key={l.id}><td className="mono">{l.code}</td><td>{l.company_name}</td>
+                <td className="r num">{money(l.amount_minor, l.currency)}</td>
                 <td>{date(l.expires_on)}</td><td><Status s={l.status} /></td><td className="r"><FreezeBtn entity="lot" row={l} /></td></tr>
             ))}
           </tbody>
@@ -341,7 +335,7 @@ function NetworkModal({ modal, stations, companies, onClose, onDone }: { modal: 
   const [result, setResult] = useState<any>(null);
   const submit = async () => {
     let out;
-    if (modal.kind === 'company') out = await run(() => d.post('/api/companies', { name: f.name, approvalThresholdGallons: Number(f.threshold || 500) }), 'Company added');
+    if (modal.kind === 'company') out = await run(() => d.post('/api/companies', { name: f.name, approvalThreshold: Number(f.threshold || 500000) }), 'Company added');
     if (modal.kind === 'station') out = await run(() => d.post('/api/stations', { name: f.name, address: f.address }), 'Station added');
     if (modal.kind === 'price') out = await run(() => d.post('/api/contracts', { companyId: modal.data.id, grade: f.grade, priceMinor: Math.round(Number(f.price) * 100) }), 'Contract price set');
     if (modal.kind === 'terminal') {
@@ -372,12 +366,12 @@ function NetworkModal({ modal, stations, companies, onClose, onDone }: { modal: 
     <Modal title={titles[modal.kind]} onClose={onClose}>
       <div className="stack">
         {(modal.kind === 'company' || modal.kind === 'station' || modal.kind === 'user') && <label>Name<input onChange={set('name')} /></label>}
-        {modal.kind === 'company' && <label>Batches above this many gallons need a second approver<input type="number" placeholder="500" onChange={set('threshold')} /></label>}
+        {modal.kind === 'company' && <label>Allocation batches above this amount (HTG) need a second approver<input type="number" placeholder="500000" onChange={set('threshold')} /></label>}
         {modal.kind === 'station' && <label>Address<input onChange={set('address')} /></label>}
         {modal.kind === 'price' && <>
-          <label>Grade<select value={f.grade} onChange={set('grade')}><option value="diesel">Diesel</option><option value="gasoline">Gasoline</option><option value="premium">Premium</option></select></label>
+          <label>Grade<select value={f.grade} onChange={set('grade')}><option value="diesel">Diesel</option><option value="gasoline">Gasoline</option></select></label>
           <label>Price per gallon (HTG)<input type="number" step="0.01" onChange={set('price')} /></label>
-          <p className="small muted">Existing lots keep the price they were funded at.</p>
+          <p className="small muted">Applies to fuelings approved from now on. Balances are in HTG and are not affected.</p>
         </>}
         {modal.kind === 'terminal' && <>
           <label>Terminal label<input placeholder="T-05" onChange={set('label')} /></label>
@@ -430,7 +424,7 @@ function Ledger() {
               const debits = e.lines.filter((l: any) => l.debit > 0);
               const credits = e.lines.filter((l: any) => l.credit > 0);
               const fmt = (l: any, v: number) => (
-                <div key={l.id} className="small">{l.account_label ?? label(l.account)}{l.lot_code ? <span className="muted"> [{l.lot_code}]</span> : ''} <b className="num">{l.unit === 'mgal' ? `${gal(v, 1)} gal` : money(v, l.unit)}</b></div>
+                <div key={l.id} className="small">{l.account_label ?? label(l.account)}{l.lot_code ? <span className="muted"> [{l.lot_code}]</span> : ''} <b className="num">{money(v, l.unit)}</b></div>
               );
               return (
                 <tr key={e.id}><td>{e.id}</td><td><b>{cap(e.kind.replace(/_/g, ' '))}</b>{e.company_name && <div className="small muted">{e.company_name}</div>}</td>
@@ -468,9 +462,9 @@ function Audit() {
 function Refunds() {
   return (
     <>
-      <PageHead eyebrow="Treasury" title="Refunds of unused prepaid gallons" />
+      <PageHead eyebrow="Treasury" title="Refunds of unused prepaid funds" />
       <div className="banner" style={{ marginBottom: 16 }}>
-        <span className="grow small">Approving a refund removes the gallons from the company pool and books a refund payable. Treasury then records the outgoing transfer; the approver can’t record the payout.</span>
+        <span className="grow small">Approving a refund removes the amount from the company pool and books a refund payable. Treasury then records the outgoing transfer; the approver can’t record the payout.</span>
       </div>
       <RefundsTable surface="distributor" />
     </>

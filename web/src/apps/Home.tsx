@@ -3,16 +3,16 @@ import { Link } from 'react-router-dom';
 const STEPS = [
   ['Fund', 'Company pays the distributor by bank transfer with a unique reference.'],
   ['Activate', 'Treasury matches cleared funds; a second approver activates the fuel lot.'],
-  ['Allocate', 'Company assigns gallons to employees. Value moves, it is never created.'],
-  ['Redeem', 'Employee confirms quantity and station by QR with PIN.'],
+  ['Allocate', 'Company assigns HTG balances to employees. Value moves, it is never created.'],
+  ['Redeem', 'Employee confirms amount, fuel and station by QR with PIN. Diesel or gasoline.'],
   ['Reconcile', 'Station closes its shift; redemptions are checked against pumps, POS and ledger.'],
 ];
 
 const SURFACES = [
   ['/distributor', 'Distributor control center', 'Verify deposits, activate lots, freeze, approve reversals, read the ledger.', 'admin@bousol · treasury@bousol · approver@bousol'],
-  ['/corporate', 'Corporate client portal', 'Fund the account, manage the roster, allocate gallons with maker-checker.', 'prep@companya · approve@companya'],
+  ['/corporate', 'Corporate client portal', 'Fund the account, manage the roster, allocate HTG with maker-checker.', 'prep@companya · approve@companya'],
   ['/station', 'Station app', 'One registered terminal per station: shifts, QR requests, dispense, shift close.', 'Activate with STATION1–4 · attendant1–4@bousol · manager1–4@bousol'],
-  ['/employee', 'Employee app', 'See your gallons, scan the station QR, approve with your PIN, get a receipt.', '50937000001 (PIN 1234) · 50937000002'],
+  ['/employee', 'Employee app', 'See your HTG balance, scan the station QR, approve with your PIN, get a receipt.', '50937000001 (PIN 1234) · 50937000002'],
 ];
 
 export default function Home() {
@@ -22,8 +22,8 @@ export default function Home() {
         <div className="eyebrow">BOUSOL · Prepaid fuel platform</div>
         <h1>Prepaid Fuel Platform</h1>
         <p className="lede">
-          A closed-loop fuel entitlement system that digitizes the voucher program. Every gallon stays traceable to
-          cleared funds and a contract price.
+          A closed-loop fuel entitlement system that digitizes the voucher program. Every gourde stays traceable to
+          cleared funds; gallons are shown at the contract price for reference.
         </p>
         <div className="steps">
           {STEPS.map(([title, text], i) => (

@@ -7,6 +7,10 @@ import { RefundsTable } from './finance';
 
 const c = api('corporate');
 
+/** "≈ 3,759 gal diesel · 4,385 gal gasoline" — reference only. */
+const gallonsRef = (ref: Record<string, number>) =>
+  Object.entries(ref ?? {}).map(([g, m]) => `≈ ${gal(m)} gal ${g}`).join(' · ');
+
 export default function Corporate() {
   return (
     <Authed surface="corporate">
@@ -44,32 +48,32 @@ function Overview() {
       </PageHead>
       {data.company.status === 'frozen' && <div className="banner bad" style={{ marginBottom: 16 }}>Your program is frozen by the distributor. Allocations and fueling are paused.</div>}
       <div className="grid g4">
-        <Kpi label="Unallocated" value={`${gal(k.unallocated_mgal)} gal`} sub={Object.entries(k.unallocated_by_grade).map(([g, m]) => `${cap(g)} ${gal(m as number)}`).join(' · ') || 'Fund to add gallons'} />
-        <Kpi label="Batch ready" value={`${gal(k.batch_ready_mgal)} gal`} sub="Drafts and batches awaiting approval" />
+        <Kpi label="Unallocated" value={money(k.unallocated_minor)} sub={gallonsRef(k.unallocated_gallons_ref) || 'Fund your account to start'} />
+        <Kpi label="Batch ready" value={money(k.batch_ready_minor)} sub="Drafts and batches awaiting approval" />
         <Kpi label="Recurring" value={k.recurring ? 'Monthly' : 'Off'} sub={k.recurring ? `${k.recurring.status === 'paused' ? 'Paused — ' + (k.recurring.pause_reason ?? '') : `Day ${k.recurring.day_of_month} each month`}` : 'Make a posted batch recurring'} />
-        <Kpi label="In employee wallets" value={`${gal(k.allocated_mgal)} gal`} sub={`${gal(k.redeemed_mgal, 1)} gal redeemed to date`} />
+        <Kpi label="In employee wallets" value={money(k.allocated_minor)} sub={`${money(k.redeemed_minor)} spent · ${gal(k.redeemed_mgal, 1)} gal to date`} />
       </div>
       <div className="grid g2 mt">
         <div className="card white">
           <h2>Funding</h2>
-          <table><thead><tr><th>Reference</th><th>Grade</th><th className="r">Amount</th><th>Status</th></tr></thead><tbody>
+          <table><thead><tr><th>Reference</th><th className="r">Amount</th><th>Status</th></tr></thead><tbody>
             {data.funding.map((f: any) => (
-              <tr key={f.id}><td className="mono">{f.reference}</td><td>{cap(f.grade)}</td><td className="r num">{money(f.amount_minor, f.currency)}</td><td><Status s={f.status} /></td></tr>
+              <tr key={f.id}><td className="mono">{f.reference}</td><td className="r num">{money(f.amount_minor, f.currency)}</td><td><Status s={f.status} /></td></tr>
             ))}
           </tbody></table>
           {!data.funding.length && <Empty>No funding yet.</Empty>}
         </div>
         <div className="card white">
-          <h2>Fuel lots</h2>
-          <table><thead><tr><th>Lot</th><th>Grade</th><th className="r">Funded</th><th className="r">Unallocated</th><th>Expires</th><th></th></tr></thead><tbody>
+          <h2>Funded lots</h2>
+          <table><thead><tr><th>Lot</th><th className="r">Cleared</th><th className="r">Unallocated</th><th>Expires</th><th></th></tr></thead><tbody>
             {data.lots.map((l: any) => (
-              <tr key={l.id}><td className="mono">{l.code}</td><td>{cap(l.grade)}</td><td className="r num">{gal(l.gallons_mgal)}</td>
-                <td className="r num">{gal(l.unallocated_mgal)}</td><td>{date(l.expires_on)} {l.status !== 'active' && <Status s={l.status} />}</td>
-                <td className="r">{me.role === 'co_approver' && l.status === 'active' && l.unallocated_mgal > 0 && <button className="sm ghost" onClick={() => setRefunding(l)}>Refund</button>}</td></tr>
+              <tr key={l.id}><td className="mono">{l.code}</td><td className="r num">{money(l.amount_minor, l.currency)}</td>
+                <td className="r num">{money(l.unallocated_minor, l.currency)}</td><td>{date(l.expires_on)} {l.status !== 'active' && <Status s={l.status} />}</td>
+                <td className="r">{me.role === 'co_approver' && l.status === 'active' && l.unallocated_minor > 0 && <button className="sm ghost" onClick={() => setRefunding(l)}>Refund</button>}</td></tr>
             ))}
           </tbody></table>
           {!data.lots.length && <Empty>Lots appear once your deposit is verified and activated.</Empty>}
-          <p className="small muted" style={{ marginTop: 8 }}>Contract prices: {data.contracts.map((p: any) => `${cap(p.grade)} ${money(p.price_minor, p.currency)}/gal`).join(' · ')}</p>
+          <p className="small muted" style={{ marginTop: 8 }}>Contract prices, applied at the pump: {data.contracts.map((p: any) => `${cap(p.grade)} ${money(p.price_minor, p.currency)}/gal`).join(' · ')}</p>
         </div>
       </div>
       <h2 className="mt2" style={{ marginBottom: 12 }}>Refunds</h2>
@@ -90,11 +94,11 @@ function Allocations() {
   const approver = me.role === 'co_approver';
   return (
     <>
-      <PageHead eyebrow="Step 03 · Allocate" title="Allocate gallons without touching funding">
+      <PageHead eyebrow="Step 03 · Allocate" title="Allocate fuel money without touching funding">
         <button onClick={() => setBuilding(true)}>New allocation batch</button>
       </PageHead>
       <div className="banner" style={{ marginBottom: 16 }}>
-        <span className="grow small">Batches over {gal(data.company.approval_threshold_mgal)} gal need a second person to approve. Records sharing a phone number are held for review. Unallocated: <b>{Object.entries(data.kpis.unallocated_by_grade).map(([g, m]) => `${cap(g)} ${gal(m as number)} gal`).join(' · ') || '0 gal'}</b></span>
+        <span className="grow small">Batches over {money(data.company.approval_threshold_minor)} need a second person to approve. Records sharing a phone number are held for review. Unallocated: <b>{money(data.kpis.spendable_unallocated_minor)}</b></span>
       </div>
       <div className="stack">
         {data.batches.map((b: any) => (
@@ -105,10 +109,10 @@ function Allocations() {
             </div>
             <div className="table-wrap mt">
               <table>
-                <thead><tr><th>Employee</th><th>Dept</th><th>Fuel</th><th className="r">Gal</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Employee</th><th>Dept</th><th className="r">Amount</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                   {b.lines.map((l: any) => (
-                    <tr key={l.id}><td><b>{l.employee_name}</b></td><td>{l.dept}</td><td>{cap(l.grade)}</td><td className="r num"><b>{gal(l.gallons_mgal, 1)}</b></td>
+                    <tr key={l.id}><td><b>{l.employee_name}</b></td><td>{l.dept}</td><td className="r num"><b>{money(l.amount_minor)}</b></td>
                       <td><Status s={l.status === 'posted' ? 'posted' : l.status} />{l.hold_reason && <span className="small muted"> {l.hold_reason}</span>}</td>
                       <td className="r">{l.status === 'held' && approver && b.status !== 'posted' && b.status !== 'rejected' && (
                         <button className="sm secondary" disabled={busy} onClick={() => act(`/api/batch-lines/${l.id}/release`, 'Record released into batch')}>Verified — release</button>
@@ -118,15 +122,15 @@ function Allocations() {
               </table>
             </div>
             <p className="small muted" style={{ marginTop: 8 }}>
-              {gal(b.ready_mgal, 1)} gal ready{b.held_count ? ` · ${b.held_count} record(s) held for review` : ''}
+              {money(b.ready_minor)} ready{b.held_count ? ` · ${b.held_count} record(s) held for review` : ''}
               {b.recurring_id ? ' · from recurring schedule' : ''} · prepared by {b.prepared_by_name ?? 'schedule'}{b.approved_by_name ? ` · approved by ${b.approved_by_name}` : ''}
               {b.posted_at ? ` · posted ${when(b.posted_at)}` : ''}
             </p>
             {b.status === 'draft' && (
-              <div className="callout mt"><span className="grow">Prepared by {b.prepared_by_name}{b.ready_mgal > data.company.approval_threshold_mgal ? ' · needs a second approver' : ''}</span>
+              <div className="callout mt"><span className="grow">Prepared by {b.prepared_by_name}{b.ready_minor > data.company.approval_threshold_minor ? ' · needs a second approver' : ''}</span>
                 <button className="sm secondary" style={{ color: '#fff', borderColor: '#fff' }} disabled={busy} onClick={() => act(`/api/batches/${b.id}/reject`, 'Batch discarded')}>Discard</button>
-                <button disabled={busy} onClick={() => act(`/api/batches/${b.id}/submit`, b.ready_mgal > data.company.approval_threshold_mgal ? 'Sent for approval' : 'Batch posted')}>
-                  {b.ready_mgal > data.company.approval_threshold_mgal ? 'Send for approval' : 'Post allocation'}
+                <button disabled={busy} onClick={() => act(`/api/batches/${b.id}/submit`, b.ready_minor > data.company.approval_threshold_minor ? 'Sent for approval' : 'Batch posted')}>
+                  {b.ready_minor > data.company.approval_threshold_minor ? 'Send for approval' : 'Post allocation'}
                 </button></div>
             )}
             {b.status === 'pending_approval' && (
@@ -170,14 +174,14 @@ function BatchBuilder({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const me = useMe();
   const employees = useLoad(() => c.get(`/api/companies/${me.companyId}/employees`), []);
   const [title, setTitle] = useState('Monthly fuel benefit');
-  const [rows, setRows] = useState<Record<number, { on: boolean; grade: string; gallons: string }>>({});
-  const [bulk, setBulk] = useState('30');
+  const [rows, setRows] = useState<Record<number, { on: boolean; amount: string }>>({});
+  const [bulk, setBulk] = useState('5000');
   const { busy, run } = useAction();
   const active = (employees.data ?? []).filter((e: any) => e.status === 'active');
-  const row = (id: number) => rows[id] ?? { on: false, grade: 'diesel', gallons: bulk };
+  const row = (id: number) => rows[id] ?? { on: false, amount: bulk };
   const setRow = (id: number, patch: any) => setRows({ ...rows, [id]: { ...row(id), ...patch } });
-  const lines = useMemo(() => active.filter((e: any) => row(e.id).on).map((e: any) => ({ employeeId: e.id, grade: row(e.id).grade, gallons: Number(row(e.id).gallons) })), [rows, active]);
-  const total = lines.reduce((s: number, l: any) => s + (l.gallons || 0), 0);
+  const lines = useMemo(() => active.filter((e: any) => row(e.id).on).map((e: any) => ({ employeeId: e.id, amount: Number(row(e.id).amount) })), [rows, active]);
+  const total = lines.reduce((s: number, l: any) => s + (l.amount || 0), 0);
   const submit = async () => {
     if (await run(() => c.post('/api/batches', { companyId: me.companyId, title, lines }), 'Draft batch created')) onDone();
   };
@@ -185,22 +189,21 @@ function BatchBuilder({ onClose, onDone }: { onClose: () => void; onDone: () => 
     <Modal title="New allocation batch" onClose={onClose}>
       <div className="stack">
         <label>Title<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-        <div className="row"><label style={{ flex: 1 }}>Default gallons<input type="number" value={bulk} onChange={(e) => setBulk(e.target.value)} /></label>
-          <button className="sm secondary" style={{ alignSelf: 'flex-end' }} onClick={() => setRows(Object.fromEntries(active.map((e: any) => [e.id, { ...row(e.id), on: true, gallons: bulk }])))}>Select all</button></div>
+        <div className="row"><label style={{ flex: 1 }}>Default amount (HTG)<input type="number" value={bulk} onChange={(e) => setBulk(e.target.value)} /></label>
+          <button className="sm secondary" style={{ alignSelf: 'flex-end' }} onClick={() => setRows(Object.fromEntries(active.map((e: any) => [e.id, { on: true, amount: bulk }])))}>Select all</button></div>
         <div style={{ maxHeight: 340, overflow: 'auto' }}>
           <table><tbody>
             {active.map((e: any) => (
               <tr key={e.id}>
                 <td><input type="checkbox" style={{ width: 'auto' }} checked={row(e.id).on} onChange={(ev) => setRow(e.id, { on: ev.target.checked })} /></td>
                 <td>{e.name}<div className="small muted">{e.dept}{e.duplicate_phone ? ' · shares phone (will be held)' : ''}</div></td>
-                <td><select value={row(e.id).grade} onChange={(ev) => setRow(e.id, { grade: ev.target.value })}><option value="diesel">Diesel</option><option value="gasoline">Gasoline</option><option value="premium">Premium</option></select></td>
-                <td style={{ width: 90 }}><input type="number" value={row(e.id).gallons} onChange={(ev) => setRow(e.id, { gallons: ev.target.value })} /></td>
+                <td style={{ width: 130 }}><input type="number" step="0.01" value={row(e.id).amount} onChange={(ev) => setRow(e.id, { amount: ev.target.value })} /></td>
               </tr>
             ))}
           </tbody></table>
         </div>
-        <p className="small muted">{lines.length} employees · {total.toLocaleString()} gal. Nothing moves until the batch is posted.</p>
-        <button disabled={busy || !lines.length || lines.some((l: any) => !(l.gallons > 0))} onClick={submit}>Save draft</button>
+        <p className="small muted">{lines.length} employees · {money(Math.round(total * 100))}. Employees can spend it on diesel or gasoline. Nothing moves until the batch is posted.</p>
+        <button disabled={busy || !lines.length || lines.some((l: any) => !(l.amount > 0))} onClick={submit}>Save draft</button>
       </div>
     </Modal>
   );
@@ -222,18 +225,18 @@ function Employees() {
       <PageHead eyebrow="Roster" title="Employees"><button onClick={() => setAdding(true)}>Add employee</button></PageHead>
       <div className="card white table-wrap">
         <table>
-          <thead><tr><th>Name</th><th>Dept</th><th>Phone</th><th className="r">Diesel</th><th className="r">Gasoline</th><th>Wallet</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Dept</th><th>Phone</th><th className="r">Available</th><th>Wallet</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {data?.map((e: any) => (
               <tr key={e.id}>
                 <td><b>{e.name}</b></td><td>{e.dept}</td>
                 <td className="mono">{e.phone} {!!e.duplicate_phone && <span className="badge warn">Duplicate</span>}</td>
-                <td className="r num">{gal(e.balances.diesel)}</td><td className="r num">{gal(e.balances.gasoline)}</td>
+                <td className="r num">{money(e.available_minor)}{e.reserved_minor > 0 && <div className="small muted">{money(e.reserved_minor)} reserved</div>}</td>
                 <td className="small">{e.has_pin ? 'PIN set' : 'No PIN'}{e.pin_locked ? ' · locked' : ''}{e.device_bound ? ' · phone bound' : ''}</td>
                 <td><Status s={e.status} /></td>
                 <td className="r">{approver && <div className="row" style={{ justifyContent: 'flex-end' }}>
                   <button className="sm secondary" onClick={() => setRecovering(e)}>Recovery</button>
-                  <button className="sm ghost" onClick={() => setReturning(e)}>Return gallons</button>
+                  <button className="sm ghost" onClick={() => setReturning(e)}>Return balance</button>
                   <button className={`sm ${e.status === 'frozen' ? 'secondary' : 'ghost'}`} disabled={busy} onClick={() => freeze(e)}>{e.status === 'frozen' ? 'Unfreeze' : 'Freeze'}</button>
                 </div>}</td>
               </tr>
@@ -243,7 +246,7 @@ function Employees() {
       </div>
       {adding && <AddEmployee onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {recovering && <Recovery emp={recovering} onClose={() => setRecovering(null)} onDone={() => { setRecovering(null); reload(); }} />}
-      {returning && <ReturnGallons emp={returning} onClose={() => setReturning(null)} onDone={() => { setReturning(null); reload(); }} />}
+      {returning && <ReturnBalance emp={returning} onClose={() => setReturning(null)} onDone={() => { setReturning(null); reload(); }} />}
     </>
   );
 }
@@ -287,20 +290,18 @@ function Recovery({ emp, onClose, onDone }: { emp: any; onClose: () => void; onD
   );
 }
 
-function ReturnGallons({ emp, onClose, onDone }: { emp: any; onClose: () => void; onDone: () => void }) {
-  const [grade, setGrade] = useState(Object.keys(emp.balances)[0] ?? 'diesel');
-  const [gallons, setGallons] = useState('');
+function ReturnBalance({ emp, onClose, onDone }: { emp: any; onClose: () => void; onDone: () => void }) {
+  const [amount, setAmount] = useState(String(emp.available_minor / 100));
   const [note, setNote] = useState('');
   const { busy, run } = useAction();
   return (
-    <Modal title={`Return gallons · ${emp.name}`} onClose={onClose}>
+    <Modal title={`Return balance · ${emp.name}`} onClose={onClose}>
       <div className="stack">
-        <p className="small muted">Moves unused gallons back to the company pool (e.g. when someone leaves). The distributor approves the adjustment before it posts.</p>
-        <label>Grade<select value={grade} onChange={(e) => setGrade(e.target.value)}>{Object.entries(emp.balances).map(([g, m]) => <option key={g} value={g}>{cap(g)} ({gal(m as number, 1)} gal)</option>)}</select></label>
-        <label>Gallons<input type="number" value={gallons} onChange={(e) => setGallons(e.target.value)} /></label>
+        <p className="small muted">Moves unused money back to the company pool (e.g. when someone leaves). The distributor approves the adjustment before it posts.</p>
+        <label>Amount (HTG, max {money(emp.available_minor)})<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
         <label>Reason<input value={note} onChange={(e) => setNote(e.target.value)} /></label>
-        <button disabled={busy || !(Number(gallons) > 0) || note.length < 2} onClick={async () => {
-          if (await run(() => c.post(`/api/employees/${emp.id}/return`, { grade, gallons: Number(gallons), note }), 'Sent to distributor for approval')) onDone();
+        <button disabled={busy || !(Number(amount) > 0) || note.length < 2} onClick={async () => {
+          if (await run(() => c.post(`/api/employees/${emp.id}/return`, { amount: Number(amount), note }), 'Sent to distributor for approval')) onDone();
         }}>Request adjustment</button>
       </div>
     </Modal>
@@ -315,17 +316,12 @@ function Statement() {
       <PageHead eyebrow="Ledger" title="Account statement"><button className="secondary" onClick={() => navigate('/corporate')}>Back</button></PageHead>
       <div className="card white table-wrap">
         <table>
-          <thead><tr><th>When</th><th>Event</th><th>Memo</th><th className="r">Gallons moved</th><th className="r">Money</th></tr></thead>
+          <thead><tr><th>When</th><th>Event</th><th>Memo</th><th className="r">Amount</th></tr></thead>
           <tbody>
-            {data?.map((e: any) => {
-              const galLines = e.lines.filter((l: any) => l.unit === 'mgal');
-              const moneyLines = e.lines.filter((l: any) => l.unit !== 'mgal');
-              return (
-                <tr key={e.id}><td className="small">{when(e.created_at)}</td><td><b>{cap(e.kind.replace(/_/g, ' '))}</b></td><td className="small">{e.memo}</td>
-                  <td className="r num">{gal(galLines.reduce((s: number, l: any) => s + l.debit, 0), 1)}</td>
-                  <td className="r num">{moneyLines.length ? money(moneyLines.reduce((s: number, l: any) => s + l.debit, 0), moneyLines[0].unit) : '—'}</td></tr>
-              );
-            })}
+            {data?.map((e: any) => (
+              <tr key={e.id}><td className="small">{when(e.created_at)}</td><td><b>{cap(e.kind.replace(/_/g, ' '))}</b></td><td className="small">{e.memo}</td>
+                <td className="r num">{money(e.lines.reduce((s: number, l: any) => s + l.debit, 0), e.lines[0]?.unit)}</td></tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -334,19 +330,17 @@ function Statement() {
 }
 
 function RequestRefund({ lot, onClose, onDone }: { lot: any; onClose: () => void; onDone: () => void }) {
-  const [gallons, setGallons] = useState(String(lot.unallocated_mgal / 1000));
+  const [amount, setAmount] = useState(String(lot.unallocated_minor / 100));
   const [reason, setReason] = useState('');
   const { busy, run } = useAction();
-  const value = (Number(gallons) || 0) * lot.price_minor;
   return (
     <Modal title={`Refund from ${lot.code}`} onClose={onClose}>
       <div className="stack">
-        <p className="small muted">Only unallocated gallons can be refunded, at the price they were funded at ({money(lot.price_minor, lot.currency)}/gal). The distributor approves, then pays out by bank transfer.</p>
-        <label>Gallons (max {gal(lot.unallocated_mgal, 1)})<input type="number" step="0.1" value={gallons} onChange={(e) => setGallons(e.target.value)} /></label>
-        <div className="kv"><span>Refund amount</span><b>{money(value, lot.currency)}</b></div>
+        <p className="small muted">Only money not yet allocated to employees can be refunded. The distributor approves, then pays out by bank transfer.</p>
+        <label>Amount (HTG, max {money(lot.unallocated_minor, lot.currency)})<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
         <label>Reason<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-        <button disabled={busy || !(Number(gallons) > 0) || reason.length < 2} onClick={async () => {
-          if (await run(() => c.post('/api/refunds', { lotId: lot.id, gallons: Number(gallons), reason }), 'Refund requested')) onDone();
+        <button disabled={busy || !(Number(amount) > 0) || reason.length < 2} onClick={async () => {
+          if (await run(() => c.post('/api/refunds', { lotId: lot.id, amount: Number(amount), reason }), 'Refund requested')) onDone();
         }}>Request refund</button>
       </div>
     </Modal>

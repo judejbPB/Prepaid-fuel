@@ -1,9 +1,10 @@
 import { COMPANY, DISTRIBUTOR, requireCompany, requireRole, type Actor } from '../auth.js';
 import type { Ctx } from '../context.js';
 import { badRequest, conflict, forbidden, notFound } from '../errors.js';
-import { acct, GAL } from '../ledger.js';
+import { acct } from '../ledger.js';
 import { nowIso } from '../units.js';
 
+/** The company's contract price per gallon for a grade, used to convert HTG to reference gallons. */
 export function activeContract(ctx: Ctx, companyId: number, grade: string) {
   const c = ctx.db.get('SELECT * FROM contracts WHERE company_id = ? AND grade = ? AND active = 1', companyId, grade);
   if (!c) throw badRequest('no_contract', `No active ${grade} contract price for this company`);
@@ -11,22 +12,19 @@ export function activeContract(ctx: Ctx, companyId: number, grade: string) {
 }
 
 /** Step 01 · Fund: company announces a bank transfer and receives a unique payment reference. */
-export function createFunding(ctx: Ctx, actor: Actor, input: { companyId: number; grade: string; amountMinor: number }) {
+export function createFunding(ctx: Ctx, actor: Actor, input: { companyId: number; amountMinor: number; currency?: string }) {
   requireRole(actor, [...COMPANY, 'dist_admin', 'dist_treasury']);
   requireCompany(actor, input.companyId);
   const company = ctx.db.get('SELECT * FROM companies WHERE id = ?', input.companyId);
   if (!company) throw notFound('Company');
   if (company.status !== 'active') throw conflict('frozen', 'Company is frozen');
-  const contract = activeContract(ctx, input.companyId, input.grade);
-  const gallons = Math.floor((input.amountMinor * 1000) / contract.price_minor);
-  if (gallons <= 0) throw badRequest('too_small', 'Amount buys less than one milligallon');
+  if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) throw badRequest('bad_amount', 'Amount must be positive');
 
   return ctx.db.tx(() => {
     const next = (ctx.db.get('SELECT COALESCE(MAX(id), 0) + 4821 AS n FROM funding_requests')!.n as number);
     const id = ctx.db.run(
-      `INSERT INTO funding_requests (reference, company_id, grade, amount_minor, price_minor, currency, gallons_mgal, created_by)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      `TR-${next}`, input.companyId, input.grade, input.amountMinor, contract.price_minor, contract.currency, gallons, actor.userId,
+      'INSERT INTO funding_requests (reference, company_id, amount_minor, currency, created_by) VALUES (?,?,?,?,?)',
+      `TR-${next}`, input.companyId, input.amountMinor, input.currency ?? 'HTG', actor.userId,
     ).id;
     ctx.db.audit(actor.userId, 'funding.create', 'funding', id, input);
     return getFunding(ctx, id);
@@ -72,7 +70,7 @@ export function matchFunding(ctx: Ctx, actor: Actor, id: number, input: { bankRe
   });
 }
 
-/** Step 02b · A second approver activates the fuel lot. Posts the funding entry. */
+/** Step 02b · A second approver activates the lot of cleared funds. Posts the funding entry. */
 export function approveFunding(ctx: Ctx, actor: Actor, id: number) {
   requireRole(actor, ['dist_approver', 'dist_admin']);
   return ctx.db.tx(() => {
@@ -85,10 +83,8 @@ export function approveFunding(ctx: Ctx, actor: Actor, id: number) {
     const expires = new Date();
     expires.setMonth(expires.getMonth() + ctx.config.lotValidityMonths);
     const lotId = ctx.db.run(
-      `INSERT INTO lots (code, company_id, funding_id, grade, price_minor, currency, gallons_mgal, expires_on)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      `LOT-${f.reference.slice(3)}`, f.company_id, f.id, f.grade, f.price_minor, f.currency, f.gallons_mgal,
-      expires.toISOString().slice(0, 10),
+      'INSERT INTO lots (code, company_id, funding_id, amount_minor, currency, expires_on) VALUES (?,?,?,?,?,?)',
+      `LOT-${f.reference.slice(3)}`, f.company_id, f.id, f.amount_minor, f.currency, expires.toISOString().slice(0, 10),
     ).id;
 
     ctx.ledger.post({
@@ -99,10 +95,8 @@ export function approveFunding(ctx: Ctx, actor: Actor, id: number) {
       memo: `${f.reference} activated as LOT-${f.reference.slice(3)}`,
       createdBy: actor.userId,
       lines: [
-        { account: acct.bankVerified, unit: f.currency, debit: f.amount_minor },
-        { account: acct.prepaidLiability(f.company_id), unit: f.currency, credit: f.amount_minor },
-        { account: acct.issued(f.company_id), unit: GAL, lotId, debit: f.gallons_mgal },
-        { account: acct.unallocated(f.company_id), unit: GAL, lotId, credit: f.gallons_mgal },
+        { account: acct.bankVerified, unit: f.currency, lotId, debit: f.amount_minor },
+        { account: acct.unallocated(f.company_id), unit: f.currency, lotId, credit: f.amount_minor },
       ],
     });
     ctx.db.run(

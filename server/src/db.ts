@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-// Quantities are stored as integers: gallons in milligallons (mgal), money in minor units (cents).
+// Balances are money in minor units (HTG cents). Gallons are reference only, stored in milligallons (mgal).
 export const SCHEMA = `
 PRAGMA foreign_keys = ON;
 
@@ -8,14 +8,14 @@ CREATE TABLE IF NOT EXISTS companies (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','frozen')),
-  approval_threshold_mgal INTEGER NOT NULL DEFAULT 500000,
+  approval_threshold_minor INTEGER NOT NULL DEFAULT 50000000,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS contracts (
   id INTEGER PRIMARY KEY,
   company_id INTEGER NOT NULL REFERENCES companies(id),
-  grade TEXT NOT NULL CHECK (grade IN ('diesel','gasoline','premium')),
+  grade TEXT NOT NULL CHECK (grade IN ('diesel','gasoline')),
   price_minor INTEGER NOT NULL CHECK (price_minor > 0),
   currency TEXT NOT NULL DEFAULT 'HTG',
   active INTEGER NOT NULL DEFAULT 1,
@@ -81,11 +81,8 @@ CREATE TABLE IF NOT EXISTS funding_requests (
   id INTEGER PRIMARY KEY,
   reference TEXT NOT NULL UNIQUE,
   company_id INTEGER NOT NULL REFERENCES companies(id),
-  grade TEXT NOT NULL,
   amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
-  price_minor INTEGER NOT NULL,
-  currency TEXT NOT NULL,
-  gallons_mgal INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'HTG',
   status TEXT NOT NULL DEFAULT 'awaiting_bank'
     CHECK (status IN ('awaiting_bank','matched','approved','rejected')),
   bank_reference TEXT,
@@ -121,8 +118,7 @@ CREATE TABLE IF NOT EXISTS refunds (
   id INTEGER PRIMARY KEY,
   company_id INTEGER NOT NULL REFERENCES companies(id),
   lot_id INTEGER NOT NULL REFERENCES lots(id),
-  gallons_mgal INTEGER NOT NULL CHECK (gallons_mgal > 0),
-  amount_minor INTEGER NOT NULL,
+  amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
   currency TEXT NOT NULL,
   reason TEXT,
   status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','approved','paid','rejected')),
@@ -143,10 +139,8 @@ CREATE TABLE IF NOT EXISTS lots (
   code TEXT NOT NULL UNIQUE,
   company_id INTEGER NOT NULL REFERENCES companies(id),
   funding_id INTEGER NOT NULL UNIQUE REFERENCES funding_requests(id),
-  grade TEXT NOT NULL,
-  price_minor INTEGER NOT NULL,
+  amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
   currency TEXT NOT NULL,
-  gallons_mgal INTEGER NOT NULL,
   expires_on TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','frozen','expired')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -169,7 +163,7 @@ CREATE TABLE IF NOT EXISTS journal_lines (
   entry_id INTEGER NOT NULL REFERENCES journal_entries(id),
   account TEXT NOT NULL,
   unit TEXT NOT NULL,
-  lot_id INTEGER REFERENCES lots(id),
+  lot_id INTEGER NOT NULL REFERENCES lots(id),
   debit INTEGER NOT NULL DEFAULT 0 CHECK (debit >= 0),
   credit INTEGER NOT NULL DEFAULT 0 CHECK (credit >= 0),
   CHECK ((debit = 0) != (credit = 0))
@@ -205,8 +199,7 @@ CREATE TABLE IF NOT EXISTS allocation_lines (
   id INTEGER PRIMARY KEY,
   batch_id INTEGER NOT NULL REFERENCES allocation_batches(id),
   employee_id INTEGER NOT NULL REFERENCES employees(id),
-  grade TEXT NOT NULL,
-  gallons_mgal INTEGER NOT NULL CHECK (gallons_mgal > 0),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
   status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready','held','posted')),
   hold_reason TEXT
 );
@@ -237,6 +230,7 @@ CREATE TABLE IF NOT EXISTS shifts (
   pump_json TEXT,
   pos_json TEXT,
   variance_mgal INTEGER,
+  variance_minor INTEGER,
   manager_note TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_shift ON shifts(terminal_id) WHERE status = 'open';
@@ -249,9 +243,17 @@ CREATE TABLE IF NOT EXISTS redemptions (
   shift_id INTEGER NOT NULL REFERENCES shifts(id),
   attendant_id INTEGER NOT NULL REFERENCES users(id),
   pump INTEGER NOT NULL,
-  grade TEXT NOT NULL,
-  requested_mgal INTEGER NOT NULL CHECK (requested_mgal > 0),
+  grade TEXT NOT NULL CHECK (grade IN ('diesel','gasoline')),
+  -- The attendant asks for either a quantity (gallons) or an amount (HTG); the other is derived
+  -- at approval from the employee's company contract price, which is then locked.
+  requested_mgal INTEGER CHECK (requested_mgal > 0),
+  requested_minor INTEGER CHECK (requested_minor > 0),
+  price_minor INTEGER,
+  currency TEXT,
+  approved_minor INTEGER,
+  approved_mgal INTEGER,
   dispensed_mgal INTEGER,
+  charged_minor INTEGER,
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','approved','completed','cancelled','expired')),
   employee_id INTEGER REFERENCES employees(id),

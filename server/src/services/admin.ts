@@ -1,17 +1,18 @@
 import { COMPANY, DISTRIBUTOR, hashSecret, randomToken, requireCompany, requireRole, sha256, verifySecret, type Actor, type Role } from '../auth.js';
 import type { Ctx } from '../context.js';
 import { badRequest, conflict, forbidden, notFound } from '../errors.js';
-import { acct, GAL, type Line } from '../ledger.js';
-import { GRADES, today, valueOf } from '../units.js';
+import { acct, type Line } from '../ledger.js';
+import { GRADES, toMinor, today } from '../units.js';
 
 // ---------------------------------------------------------------------------
 // Organisation setup (distributor)
 
-export function createCompany(ctx: Ctx, actor: Actor | null, input: { name: string; approvalThresholdGallons?: number }) {
+/** `approvalThreshold`: allocation batches above this amount (HTG) need a second approver. */
+export function createCompany(ctx: Ctx, actor: Actor | null, input: { name: string; approvalThreshold?: number }) {
   if (actor) requireRole(actor, ['dist_admin']);
   const id = ctx.db.run(
-    'INSERT INTO companies (name, approval_threshold_mgal) VALUES (?,?)',
-    input.name, Math.round((input.approvalThresholdGallons ?? 500) * 1000),
+    'INSERT INTO companies (name, approval_threshold_minor) VALUES (?,?)',
+    input.name, toMinor(input.approvalThreshold ?? 500_000),
   ).id;
   ctx.db.audit(actor?.userId ?? null, 'company.create', 'company', id, input);
   return ctx.db.get('SELECT * FROM companies WHERE id = ?', id);
@@ -21,7 +22,7 @@ export function setContractPrice(
   ctx: Ctx, actor: Actor | null, input: { companyId: number; grade: string; priceMinor: number; currency?: string },
 ) {
   if (actor) requireRole(actor, ['dist_admin']);
-  if (!GRADES.includes(input.grade as any)) throw badRequest('bad_grade', 'Unknown grade');
+  if (!GRADES.includes(input.grade as any)) throw badRequest('bad_grade', 'Only diesel and gasoline are sold');
   if (!Number.isInteger(input.priceMinor) || input.priceMinor <= 0) throw badRequest('bad_price', 'Price must be positive');
   return ctx.db.tx(() => {
     // Existing lots keep the price they were funded at; only new funding uses the new price.
@@ -136,8 +137,8 @@ export function listEmployees(ctx: Ctx, actor: Actor, companyId: number) {
     )
     .map((e) => ({
       ...e,
-      balances: ctx.ledger.byGrade(acct.available(e.id)),
-      reserved: ctx.ledger.byGrade(acct.reserved(e.id)),
+      available_minor: ctx.ledger.balance(acct.available(e.id)),
+      reserved_minor: ctx.ledger.balance(acct.reserved(e.id)),
     }));
 }
 
@@ -203,9 +204,8 @@ export function setFrozen(ctx: Ctx, actor: Actor, entity: Freezable, id: number,
 // Expiration
 
 /**
- * Expires lots past their date: remaining unallocated and employee-available gallons move to the
- * company's expired account and the matching prepaid liability is recognised as breakage.
- * Gallons reserved for an in-flight fueling are left alone.
+ * Expires lots past their date: the remaining unallocated and employee-available balance of the lot moves
+ * to the company's expired account (breakage). Amounts reserved for an in-flight fueling are left alone.
  */
 export function runExpirations(ctx: Ctx, actor: Actor, asOf = today()) {
   requireRole(actor, ['dist_approver', 'dist_admin']);
@@ -215,19 +215,16 @@ export function runExpirations(ctx: Ctx, actor: Actor, asOf = today()) {
     const entryId = ctx.db.tx(() => {
       const holders = ctx.db.all(
         `SELECT account, SUM(credit - debit) AS bal FROM journal_lines
-          WHERE lot_id = ? AND unit = ? AND (account = ? OR account LIKE 'emp:%:available')
+          WHERE lot_id = ? AND (account = ? OR account LIKE 'emp:%:available')
           GROUP BY account HAVING bal > 0`,
-        lot.id, GAL, acct.unallocated(lot.company_id),
+        lot.id, acct.unallocated(lot.company_id),
       );
       const total = holders.reduce((s, h) => s + Number(h.bal), 0);
       let id: number | null = null;
       if (total > 0) {
-        const value = valueOf(total, lot.price_minor);
         const lines: Line[] = [
-          ...holders.map((h) => ({ account: h.account, unit: GAL, lotId: lot.id, debit: Number(h.bal) })),
-          { account: acct.expired(lot.company_id), unit: GAL, lotId: lot.id, credit: total },
-          { account: acct.prepaidLiability(lot.company_id), unit: lot.currency, debit: value },
-          { account: acct.breakage, unit: lot.currency, credit: value },
+          ...holders.map((h) => ({ account: h.account, unit: lot.currency, lotId: lot.id, debit: Number(h.bal) })),
+          { account: acct.expired(lot.company_id), unit: lot.currency, lotId: lot.id, credit: total },
         ];
         id = ctx.ledger.post({
           kind: 'expiration', refType: 'lot', refId: lot.id, companyId: lot.company_id,
@@ -235,7 +232,7 @@ export function runExpirations(ctx: Ctx, actor: Actor, asOf = today()) {
         });
       }
       ctx.db.run("UPDATE lots SET status = 'expired' WHERE id = ?", lot.id);
-      ctx.db.audit(actor.userId, 'lot.expire', 'lot', lot.id, { expiredMgal: total });
+      ctx.db.audit(actor.userId, 'lot.expire', 'lot', lot.id, { expiredMinor: total });
       return id;
     });
     results.push({ lot: lot.code, entryId });

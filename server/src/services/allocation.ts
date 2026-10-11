@@ -1,13 +1,13 @@
 import { COMPANY, DISTRIBUTOR, requireCompany, requireRole, type Actor } from '../auth.js';
 import type { Ctx } from '../context.js';
 import { badRequest, conflict, forbidden, notFound } from '../errors.js';
-import { acct, GAL, type Line } from '../ledger.js';
-import { GRADES, nowIso, toMgal } from '../units.js';
+import { acct, type Line } from '../ledger.js';
+import { nowIso, toMinor } from '../units.js';
 
+/** One employee's allocation, in currency (e.g. 5000.00 HTG). */
 export interface BatchLineInput {
   employeeId: number;
-  grade: string;
-  gallons: number;
+  amount: number;
 }
 
 export function getBatch(ctx: Ctx, id: number) {
@@ -26,8 +26,8 @@ export function getBatch(ctx: Ctx, id: number) {
       WHERE al.batch_id = ? ORDER BY al.id`,
     id,
   );
-  const readyMgal = lines.filter((l) => l.status !== 'held').reduce((s, l) => s + l.gallons_mgal, 0);
-  return { ...b, lines, ready_mgal: readyMgal, held_count: lines.filter((l) => l.status === 'held').length };
+  const readyMinor = lines.filter((l) => l.status !== 'held').reduce((s, l) => s + l.amount_minor, 0);
+  return { ...b, lines, ready_minor: readyMinor, held_count: lines.filter((l) => l.status === 'held').length };
 }
 
 export function listBatches(ctx: Ctx, actor: Actor, companyId: number) {
@@ -62,21 +62,19 @@ export function createBatch(
       'INSERT INTO allocation_batches (company_id, title, prepared_by, recurring_id) VALUES (?,?,?,?)',
       input.companyId, input.title, actor?.userId ?? null, input.recurringId ?? null,
     ).id;
-    const seen = new Set<string>();
+    const seen = new Set<number>();
     for (const line of input.lines) {
-      if (!GRADES.includes(line.grade as any)) throw badRequest('bad_grade', `Unknown grade ${line.grade}`);
-      const mgal = toMgal(line.gallons);
-      if (mgal <= 0) throw badRequest('bad_quantity', 'Gallons must be positive');
+      const amount = toMinor(line.amount);
+      if (amount <= 0) throw badRequest('bad_amount', 'Amounts must be positive');
       const emp = ctx.db.get('SELECT * FROM employees WHERE id = ?', line.employeeId);
       if (!emp || emp.company_id !== input.companyId) throw badRequest('bad_employee', `Employee ${line.employeeId} not in company`);
       if (emp.status !== 'active') throw conflict('employee_inactive', `${emp.name} is ${emp.status}`);
-      const key = `${line.employeeId}:${line.grade}`;
-      if (seen.has(key)) throw badRequest('duplicate_line', `${emp.name} appears twice for ${line.grade}`);
-      seen.add(key);
+      if (seen.has(line.employeeId)) throw badRequest('duplicate_line', `${emp.name} appears twice in the batch`);
+      seen.add(line.employeeId);
       const held = dupes.has(emp.phone);
       ctx.db.run(
-        'INSERT INTO allocation_lines (batch_id, employee_id, grade, gallons_mgal, status, hold_reason) VALUES (?,?,?,?,?,?)',
-        id, line.employeeId, line.grade, mgal, held ? 'held' : 'ready', held ? 'Duplicate phone number' : null,
+        'INSERT INTO allocation_lines (batch_id, employee_id, amount_minor, status, hold_reason) VALUES (?,?,?,?,?)',
+        id, line.employeeId, amount, held ? 'held' : 'ready', held ? 'Duplicate phone number' : null,
       );
     }
     ctx.db.audit(actor?.userId ?? null, 'batch.create', 'batch', id, { title: input.title, lines: input.lines.length });
@@ -91,25 +89,22 @@ function postBatch(ctx: Ctx, batchId: number, actorId: number | null) {
   const ready = batch.lines.filter((l: any) => l.status === 'ready');
   if (ready.length === 0) throw conflict('nothing_ready', 'No lines are ready to post');
 
-  // Pick lots per grade for the whole batch, then split per employee in order.
+  // Pick lots FIFO for the whole batch, then split them across employees in order.
   const lines: Line[] = [];
-  for (const grade of GRADES) {
-    const gl = ready.filter((l: any) => l.grade === grade);
-    if (gl.length === 0) continue;
-    const total = gl.reduce((s: number, l: any) => s + l.gallons_mgal, 0);
-    const picks = ctx.ledger.pickFifo(acct.unallocated(batch.company_id), grade, total);
-    let pi = 0;
-    let left = picks[0].mgal;
-    for (const l of gl) {
-      let need = l.gallons_mgal;
-      while (need > 0) {
-        const take = Math.min(need, left);
-        lines.push({ account: acct.unallocated(batch.company_id), unit: GAL, lotId: picks[pi].lotId, debit: take });
-        lines.push({ account: acct.available(l.employee_id), unit: GAL, lotId: picks[pi].lotId, credit: take });
-        need -= take;
-        left -= take;
-        if (left === 0 && pi < picks.length - 1) left = picks[++pi].mgal;
-      }
+  const total = ready.reduce((s: number, l: any) => s + l.amount_minor, 0);
+  const picks = ctx.ledger.pickFifo(acct.unallocated(batch.company_id), total);
+  let pi = 0;
+  let left = picks[0].amount;
+  for (const l of ready) {
+    let need = l.amount_minor;
+    while (need > 0) {
+      const take = Math.min(need, left);
+      const { lotId, currency } = picks[pi];
+      lines.push({ account: acct.unallocated(batch.company_id), unit: currency, lotId, debit: take });
+      lines.push({ account: acct.available(l.employee_id), unit: currency, lotId, credit: take });
+      need -= take;
+      left -= take;
+      if (left === 0 && pi < picks.length - 1) left = picks[++pi].amount;
     }
   }
   const entryId = ctx.ledger.post({
@@ -136,7 +131,7 @@ export function submitBatch(ctx: Ctx, actor: Actor, id: number) {
     requireCompany(actor, b.company_id);
     if (b.status !== 'draft') throw conflict('bad_state', `Batch is ${b.status}`);
     const company = ctx.db.get('SELECT * FROM companies WHERE id = ?', b.company_id);
-    if (b.ready_mgal > company.approval_threshold_mgal) {
+    if (b.ready_minor > company.approval_threshold_minor) {
       ctx.db.run("UPDATE allocation_batches SET status = 'pending_approval' WHERE id = ?", id);
       ctx.db.audit(actor.userId, 'batch.submit', 'batch', id, { needsApproval: true });
     } else {
@@ -200,7 +195,7 @@ export function makeRecurring(ctx: Ctx, actor: Actor, batchId: number, dayOfMont
   if (dayOfMonth < 1 || dayOfMonth > 28) throw badRequest('bad_day', 'Day of month must be 1–28');
   const template = b.lines
     .filter((l: any) => l.status === 'posted')
-    .map((l: any) => ({ employeeId: l.employee_id, grade: l.grade, gallons: l.gallons_mgal / 1000 }));
+    .map((l: any) => ({ employeeId: l.employee_id, amount: l.amount_minor / 100 }));
   const period = new Date().toISOString().slice(0, 7);
   const id = ctx.db.run(
     `INSERT INTO recurring_allocations (company_id, title, template_json, day_of_month, last_period, source_batch_id)
@@ -245,16 +240,14 @@ export function runRecurring(ctx: Ctx, actor: Actor | null, now = new Date()) {
   for (const r of due) {
     if (actor?.role === 'co_approver' && actor.companyId !== r.company_id) continue;
     const template: BatchLineInput[] = JSON.parse(r.template_json);
-    const unallocated = ctx.ledger.byGrade(acct.unallocated(r.company_id), true);
-    const need: Record<string, number> = {};
-    for (const l of template) need[l.grade] = (need[l.grade] ?? 0) + toMgal(l.gallons);
-    const short = Object.entries(need).find(([g, m]) => (unallocated[g] ?? 0) < m);
-    if (short) {
+    const unallocated = ctx.ledger.spendable(acct.unallocated(r.company_id));
+    const need = template.reduce((sum, l) => sum + toMinor(l.amount), 0);
+    if (unallocated < need) {
       ctx.db.run(
         "UPDATE recurring_allocations SET status = 'paused', pause_reason = ? WHERE id = ?",
-        `Funded ${short[0]} balance too low for ${period} run`, r.id,
+        `Funded balance too low for ${period} run`, r.id,
       );
-      ctx.db.audit(null, 'recurring.auto_pause', 'recurring', r.id, { period, grade: short[0] });
+      ctx.db.audit(null, 'recurring.auto_pause', 'recurring', r.id, { period, need, unallocated });
       results.push({ id: r.id, outcome: 'paused_low_balance' });
       continue;
     }

@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { api, cap, gal, money, when, type Surface } from '../api';
+import { api, cap, money, when, type Surface } from '../api';
 import { Empty, Modal, PageHead, Status, useAction, useLoad, useMe } from '../ui';
 
 const d = api('distributor');
 
 const SAMPLE = `Date,Reference,Description,Amount
-2026-10-12,UNIBANK-90001,"Virement Company B TR-4823",1995000.00
+2026-10-12,UNIBANK-90001,"Virement Company B TR-4823",2000000.00
 2026-10-12,UNIBANK-90002,Bank charges,-150.00`;
 
 export function BankStatements() {
@@ -120,13 +120,13 @@ export function RefundsTable({ surface }: { surface: Surface }) {
   return (
     <div className="card white table-wrap">
       <table>
-        <thead><tr><th>#</th>{surface === 'distributor' && <th>Company</th>}<th>Lot</th><th className="r">Gallons</th><th className="r">Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>#</th>{surface === 'distributor' && <th>Company</th>}<th>Lot</th><th className="r">Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
         <tbody>
           {data?.map((r: any) => (
             <tr key={r.id}>
               <td>{r.id}</td>{surface === 'distributor' && <td>{r.company_name}</td>}
-              <td className="mono">{r.lot_code} <span className="muted">{cap(r.grade)}</span></td>
-              <td className="r num">{gal(r.gallons_mgal, 1)}</td><td className="r num">{money(r.amount_minor, r.currency)}</td>
+              <td className="mono">{r.lot_code}</td>
+              <td className="r num">{money(r.amount_minor, r.currency)}</td>
               <td className="small">{r.reason}<div className="muted">by {r.requested_by_name} · {when(r.created_at)}</div></td>
               <td>
                 <span className={`badge ${r.status === 'paid' ? 'ok' : r.status === 'rejected' ? 'bad' : 'warn'}`}>{r.status === 'approved' ? 'Approved · awaiting payout' : cap(r.status)}</span>

@@ -20,7 +20,8 @@ declare module 'fastify' {
   }
 }
 
-const grade = z.enum(['diesel', 'gasoline', 'premium']);
+const grade = z.enum(['diesel', 'gasoline']);
+const money = z.number().positive().max(1e10);
 const id = z.coerce.number().int().positive();
 const gradeMap = z.record(z.string(), z.number().nonnegative()).default({});
 
@@ -83,7 +84,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
       return ctx.db.all('SELECT * FROM companies ORDER BY name');
     });
     api.post('/api/companies', async (req) =>
-      admin.createCompany(ctx, req.actor, body(z.object({ name: z.string().min(2), approvalThresholdGallons: z.number().positive().optional() }), req)));
+      admin.createCompany(ctx, req.actor, body(z.object({ name: z.string().min(2), approvalThreshold: money.optional() }), req)));
     api.post('/api/contracts', async (req) =>
       admin.setContractPrice(ctx, req.actor, body(z.object({ companyId: id, grade, priceMinor: z.number().int().positive(), currency: z.string().length(3).optional() }), req)));
     api.get('/api/stations', async (req) => {
@@ -141,7 +142,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     // ---- funding
     api.get('/api/funding', async (req) => funding.listFunding(ctx, req.actor, z.object({ companyId: id.optional() }).parse(req.query).companyId));
     api.post('/api/funding', async (req) =>
-      funding.createFunding(ctx, req.actor, body(z.object({ companyId: id, grade, amountMinor: z.number().int().positive() }), req)));
+      funding.createFunding(ctx, req.actor, body(z.object({ companyId: id, amountMinor: z.number().int().positive() }), req)));
     api.post('/api/funding/:id/match', async (req) =>
       funding.matchFunding(ctx, req.actor, params(req), body(z.object({ bankReference: z.string().min(3), bankAmountMinor: z.number().int().positive() }), req)));
     api.post('/api/funding/:id/approve', async (req) => funding.approveFunding(ctx, req.actor, params(req)));
@@ -160,7 +161,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     // ---- refunds
     api.get('/api/refunds', async (req) => refunds.listRefunds(ctx, req.actor));
     api.post('/api/refunds', async (req) =>
-      refunds.requestRefund(ctx, req.actor, body(z.object({ lotId: id, gallons: z.number().positive(), reason: z.string().min(2) }), req)));
+      refunds.requestRefund(ctx, req.actor, body(z.object({ lotId: id, amount: money, reason: z.string().min(2) }), req)));
     api.post('/api/refunds/:id/approve', async (req) => refunds.approveRefund(ctx, req.actor, params(req)));
     api.post('/api/refunds/:id/reject', async (req) =>
       refunds.rejectRefund(ctx, req.actor, params(req), body(z.object({ reason: z.string().min(2) }), req).reason));
@@ -181,12 +182,12 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
       }), req)));
     api.post('/api/employees/:id/return', async (req) =>
       exc.requestReturnToCompany(ctx, req.actor, {
-        employeeId: params(req), ...body(z.object({ grade, gallons: z.number().positive(), note: z.string().min(2) }), req),
+        employeeId: params(req), ...body(z.object({ amount: money, note: z.string().min(2) }), req),
       }));
     api.post('/api/batches', async (req) =>
       alloc.createBatch(ctx, req.actor, body(z.object({
         companyId: id, title: z.string().min(2),
-        lines: z.array(z.object({ employeeId: id, grade, gallons: z.number().positive() })).min(1),
+        lines: z.array(z.object({ employeeId: id, amount: money })).min(1),
       }), req)));
     api.post('/api/batches/:id/submit', async (req) => alloc.submitBatch(ctx, req.actor, params(req)));
     api.post('/api/batches/:id/approve', async (req) => alloc.approveBatch(ctx, req.actor, params(req)));
@@ -212,7 +213,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     api.post('/api/shifts/close', async (req) =>
       red.closeShift(ctx, req.actor, body(z.object({ pumpTotals: gradeMap, posTotals: gradeMap }), req)));
     api.post('/api/redemptions', async (req) =>
-      red.createRequest(ctx, req.actor, body(z.object({ grade, pump: z.number().int().positive(), gallons: z.number().positive() }), req)));
+      red.createRequest(ctx, req.actor, body(z.object({ grade, pump: z.number().int().positive(), gallons: z.number().positive().optional(), amount: money.optional() }), req)));
     api.get('/api/redemptions/:id', async (req) => {
       const r = red.getRedemption(ctx, params(req));
       const a = req.actor;
@@ -221,7 +222,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
       return r;
     });
     api.post('/api/redemptions/:id/complete', async (req) =>
-      red.completeRequest(ctx, req.actor, params(req), body(z.object({ gallons: z.number().nonnegative() }), req).gallons));
+      red.completeRequest(ctx, req.actor, params(req), body(z.object({ gallons: z.number().positive().optional(), amount: money.optional() }), req)));
     api.post('/api/redemptions/:id/cancel', async (req) => red.cancelRequest(ctx, req.actor, params(req)));
 
     // ---- employee app
@@ -239,7 +240,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     api.post('/api/exceptions/:id/propose', async (req) => {
       const proposal = body(z.discriminatedUnion('action', [
         z.object({ action: z.literal('accept_variance'), note: z.string().min(3) }),
-        z.object({ action: z.literal('reverse'), gallons: z.number().positive(), note: z.string().min(3) }),
+        z.object({ action: z.literal('reverse'), amount: money, note: z.string().min(3) }),
         z.object({ action: z.literal('reject_dispute'), note: z.string().min(3) }),
       ]), req);
       return exc.propose(ctx, req.actor, params(req), proposal);

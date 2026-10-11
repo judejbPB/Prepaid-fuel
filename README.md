@@ -1,7 +1,8 @@
 # BOUSOL Prepaid Fuel Platform
 
 A closed-loop fuel entitlement system that digitizes the corporate fuel voucher program.
-Every gallon stays traceable to cleared funds and a contract price.
+Balances are held in **currency (HTG)**; gallons are shown for reference at each company's contract price.
+The distributor sells **diesel and gasoline** only. Every gourde stays traceable to the bank deposit that funded it.
 
 ```
 01 Fund → 02 Activate → 03 Allocate → 04 Redeem → 05 Reconcile
@@ -46,38 +47,47 @@ the station manager to the distributor.
 
 ## How it works
 
+### Money model
+- Company funding, company pool, employee allocations, refunds, reversals and expirations are all in
+  **HTG** (integer minor units).
+- Each company has a **contract price per gallon** for diesel and gasoline. At the pump the attendant asks
+  for either an **amount** ("2,000 gourdes") or a **quantity** (pump preset in gallons). When the employee
+  approves, the price is **locked** and the other figure is derived. The wallet is charged in HTG; gallons
+  are recorded on the redemption and receipt for reference and for pump-meter reconciliation.
+- A contract price change applies to fuelings approved afterwards. Balances are unaffected.
+
 ### Ledger (`server/src/ledger.ts`)
 One append-only double-entry journal is the source of truth. Balances are computed from journal lines and
 never stored or edited. SQLite triggers reject any update or delete on journal tables; corrections post as
 reversing entries.
 
-- Gallons are integers in **milligallons**; money is in **minor units** (HTG cents).
-- Every gallon line carries its **fuel lot**, so each gallon traces back to a bank deposit and the
-  contract price it was funded at. Allocation and redemption consume lots FIFO by expiry.
-- Holding accounts (`unallocated`, `available`, `reserved`, `clearing`) can never go negative per lot.
+- Every line carries its **lot** (one cleared bank deposit), and each entry must balance **per lot**, so
+  every gourde traces back to the deposit that funded it. Allocation and redemption consume lots FIFO by
+  expiry.
+- Holding accounts (`unallocated`, `available`, `reserved`, station sales) can never go negative per lot.
 
 | Event | Debit | Credit |
 |---|---|---|
-| Funding activated | Verified bank funds · Company issued gallons | Corporate prepaid liability · Company unallocated |
+| Funding activated | Verified bank funds | Company unallocated |
 | Employee allocation | Company unallocated | Employee available |
-| Redemption reserved | Employee available | Employee reserved |
-| Fuel confirmed | Employee reserved · Prepaid liability | Station clearing · Fuel revenue |
-| Reversal approved | Station clearing · Fuel revenue | Employee available · Prepaid liability |
-| Expiration | Unallocated / employee available · Prepaid liability | Company expired · Breakage |
-| Refund approved | Company unallocated · Prepaid liability | Company refunded · Refunds payable |
+| Redemption reserved (price locked) | Employee available | Employee reserved |
+| Fuel confirmed | Employee reserved | Station fuel sales (+ unused remainder back to available) |
+| Reversal approved | Station fuel sales | Employee available |
+| Return to company | Employee available | Company unallocated |
+| Expiration | Unallocated / employee available | Company expired (breakage) |
+| Refund approved | Company unallocated | Refunds payable |
 | Refund paid | Refunds payable | Verified bank funds |
 
-**Daily balance rule** (checked on the dashboard and at `GET /api/ledger/check`):
-funded gallons = unallocated + employee available + reserved + redeemed + expired/refunded/adjusted.
+**Daily balance rule** (checked on the dashboard and at `GET /api/ledger/check`), per lot:
+cleared funds = unallocated + employee available + reserved + redeemed + expired + refunded.
 
 ### Controls
-- **Maker-checker** wherever money or gallons move: the person who matches a deposit can't activate it;
+- **Maker-checker** wherever money moves: the person who matches a deposit can't activate it;
   batches over the company threshold need a second approver; whoever proposes a reversal or adjustment
   can't approve it.
 - **Single-use QR** requests with a 5-minute expiry; a conditional update guarantees only one approval wins.
-- **The employee confirms exact quantity, station and pump** with a PIN before anything is reserved. Fuel
-  only counts as redeemed when the attendant confirms the dispensed amount; any undispensed remainder is
-  released.
+- **The employee confirms the exact amount, fuel, station and pump** with a PIN before anything is reserved.
+  The wallet is only charged when the attendant confirms what was dispensed; any unused remainder is released.
 - **PIN lockout** after 5 wrong attempts; **device binding** of each employee wallet to one phone;
   **assisted recovery** (reset PIN, unbind device, temporary password) by the company approver.
 - **One terminal per station**, activated with a one-time code; attendants can only sign in on their own
@@ -85,14 +95,14 @@ funded gallons = unallocated + employee available + reserved + redeemed + expire
 - **Freeze** any company, employee, station, terminal or lot.
 - **Duplicate phone numbers** in a batch are held for review until an approver releases them.
 - **Recurring monthly benefits** pause themselves when the funded balance can't cover the run.
-- **Shift close** compares digital redemptions with pump totals and POS; variance over tolerance holds the
-  shift → manager explanation → distributor decision.
+- **Shift close** compares what was charged (HTG) with POS program sales, and recorded gallons with pump
+  meters; variance over either tolerance holds the shift → manager explanation → distributor decision.
 - **Bank statement import** (CSV): credits whose description carries the funding reference (`TR-xxxx`) and
   the exact amount are matched automatically; others wait in a queue for manual matching or "ignore".
   Bank references can never fund two requests. The importer counts as the matcher, so a different person
   still activates the lot.
-- **Refunds** of unused, unallocated gallons at the lot's contract price: company approver requests →
-  distributor approver approves (gallons leave the pool, liability becomes a payable) → treasury records the
+- **Refunds** of unallocated funds: company approver requests →
+  distributor approver approves (the amount leaves the pool and becomes a payable) → treasury records the
   outgoing transfer (must be a different person from the approver).
 - Full **audit log** of every action.
 

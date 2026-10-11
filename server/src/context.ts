@@ -12,8 +12,10 @@ export interface Config {
   lotValidityMonths: number;
   /** Seconds an attendant's QR request stays valid. */
   redemptionTtlSeconds: number;
-  /** Shift variance (absolute mgal) tolerated before the shift is held for review. */
+  /** Pump meter variance (absolute mgal) tolerated before the shift is held for review. */
   varianceToleranceMgal: number;
+  /** POS vs charged variance (absolute minor units) tolerated before the shift is held. */
+  varianceToleranceMinor: number;
   /** Failed PIN attempts before the wallet locks. */
   maxPinFailures: number;
 }
@@ -22,6 +24,7 @@ export const defaultConfig: Config = {
   lotValidityMonths: 9,
   redemptionTtlSeconds: 300,
   varianceToleranceMgal: 2000,
+  varianceToleranceMinor: 150000,
   maxPinFailures: 5,
 };
 

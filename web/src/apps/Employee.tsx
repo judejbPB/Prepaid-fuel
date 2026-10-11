@@ -1,7 +1,7 @@
 import jsQR from 'jsqr';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { api, cap, date, gal, when } from '../api';
+import { api, cap, date, gal, money, when } from '../api';
 import { Authed, Empty, Status, useAction, useLoad, useLogout } from '../ui';
 
 const e = api('employee');
@@ -51,7 +51,6 @@ function Phone({ children, tabs }: { children: React.ReactNode; tabs?: boolean }
 function Balance({ w }: { w: any }) {
   const navigate = useNavigate();
   const logout = useLogout('employee');
-  const grades = Array.from(new Set(['diesel', 'gasoline', 'premium', ...Object.keys(w.by_grade)]));
   const frozen = w.employee.status !== 'active' || w.employee.company_status !== 'active';
   return (
     <div className="stack">
@@ -60,28 +59,25 @@ function Balance({ w }: { w: any }) {
       {frozen && <div className="banner bad">Your fuel wallet is frozen. Contact your company admin.</div>}
       <div className="balance-card">
         <div className="sub">Available</div>
-        <div className="big num">{gal(w.available_mgal, 1)} gal</div>
-        <div className="sub">All grades{w.next_expiry ? ` · earliest expiry ${date(w.next_expiry)}` : ''}</div>
+        <div className="big num">{money(w.available_minor, w.currency)}</div>
+        <div className="sub">Diesel or gasoline{w.next_expiry ? ` · earliest expiry ${date(w.next_expiry)}` : ''}</div>
       </div>
       <div>
-        {grades.map((g) => {
-          const inProgram = w.program_grades.includes(g) || w.by_grade[g];
-          return inProgram ? (
-            <div className="kv" key={g}><span>{cap(g)}</span><b className="num">{gal(w.by_grade[g] ?? 0, 1)} gal</b></div>
-          ) : (
-            <div className="kv" key={g} style={{ border: '1.5px dashed var(--line)', borderRadius: 8, padding: '8px 10px', marginTop: 6 }}>
-              <span className="muted">{cap(g)}</span><span className="muted">Not in program</span>
-            </div>
-          );
-        })}
+        <div className="small muted" style={{ marginBottom: 4 }}>About how much fuel that buys</div>
+        {w.prices.map((p: any) => (
+          <div className="kv" key={p.grade}>
+            <span>{cap(p.grade)} <span className="small muted">at {money(p.price_minor, p.currency)}/gal</span></span>
+            <b className="num">≈ {gal(w.gallons_ref[p.grade], 1)} gal</b>
+          </div>
+        ))}
       </div>
-      {w.reserved_mgal > 0 && <div className="banner">{gal(w.reserved_mgal, 1)} gal reserved for a fueling in progress.</div>}
+      {w.reserved_minor > 0 && <div className="banner">{money(w.reserved_minor, w.currency)} reserved for a fueling in progress.</div>}
       <button className="block" disabled={frozen} onClick={() => navigate('/employee/scan')}>Scan station QR</button>
       {w.lots.length > 0 && (
         <details className="small">
-          <summary className="muted">Where my gallons come from</summary>
+          <summary className="muted">Where my balance comes from</summary>
           {w.lots.map((l: any) => (
-            <div className="kv" key={l.code}><span className="mono">{l.code} · {cap(l.grade)}</span><span>{gal(l.balance, 1)} gal · exp. {date(l.expires_on)}</span></div>
+            <div className="kv" key={l.code}><span className="mono">{l.code}</span><span>{money(l.balance, l.currency)} · exp. {date(l.expires_on)}</span></div>
           ))}
         </details>
       )}
@@ -170,7 +166,7 @@ function Approve({ onDone }: { onDone: () => void }) {
   };
   if (error) return <div className="stack"><h2>Approve fueling</h2><div className="banner bad">{error}</div><button className="secondary" onClick={() => navigate('/employee/scan')}>Scan again</button></div>;
   if (!data) return null;
-  const short = data.available_mgal < data.requested_mgal;
+  const short = data.available_minor < data.amount_minor;
   return (
     <div className="stack">
       <h2>Approve fueling</h2>
@@ -179,9 +175,9 @@ function Approve({ onDone }: { onDone: () => void }) {
         <div className="kv"><span className="muted">Pump</span><b>{data.pump}</b></div>
         <div className="kv"><span className="muted">Fuel</span><b>{cap(data.grade)}</b></div>
       </div>
-      <div><div className="muted">Quantity</div><div style={{ fontSize: 40, fontWeight: 700 }} className="num">{gal(data.requested_mgal, 1)} gal</div>
-        <div className="small muted">You have {gal(data.available_mgal, 1)} gal {data.grade} available</div></div>
-      {short ? <div className="banner bad">Not enough {data.grade} gallons for this request.</div> : <>
+      <div><div className="muted">Amount</div><div style={{ fontSize: 40, fontWeight: 700 }} className="num">{money(data.amount_minor, data.currency)}</div>
+        <div className="small muted">{data.by_amount ? '≈ ' : ''}{gal(data.gallons_mgal, 2)} gal at {money(data.price_minor, data.currency)}/gal · you have {money(data.available_minor, data.currency)}</div></div>
+      {short ? <div className="banner bad">Your balance is too low for this request.</div> : <>
         <div className="muted">Confirm with PIN</div>
         <div className="pin-dots">{[0, 1, 2, 3].map((i) => <span key={i} className={pin.length > i ? 'on' : ''} />)}</div>
         <div className="keypad">{['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map((k) => k ? <button key={k} onClick={() => press(k)}>{k}</button> : <span key="blank" />)}</div>
@@ -205,10 +201,11 @@ function Receipt() {
     <div className="stack" style={{ textAlign: 'center' }}>
       {done ? <div className="check">✓</div> : <div className="check" style={{ background: 'var(--amber)', color: 'var(--navy)' }}>…</div>}
       <h2>{done ? 'Redeemed' : r.status === 'approved' ? 'Approved — attendant is dispensing' : cap(r.status)}</h2>
-      <div style={{ fontSize: 22, fontWeight: 600 }}>{gal(done ? r.dispensed_mgal : r.requested_mgal, 1)} gal {cap(r.grade)}</div>
+      <div style={{ fontSize: 26, fontWeight: 700 }} className="num">{money(done ? r.charged_minor : r.approved_minor, r.currency)}</div>
+      <div>{gal(done ? r.dispensed_mgal : r.approved_mgal, 2)} gal {cap(r.grade)} · {money(r.price_minor, r.currency)}/gal</div>
       <div className="muted">{r.station_name} · Pump {r.pump}</div>
-      <div className="kv" style={{ textAlign: 'left' }}><span>New balance</span><b>{gal(wallet.data?.available_mgal, 1)} gal</b></div>
-      {done && r.dispensed_mgal < r.requested_mgal && <p className="small muted">{gal(r.requested_mgal - r.dispensed_mgal, 1)} gal not dispensed was returned to your balance.</p>}
+      <div className="kv" style={{ textAlign: 'left' }}><span>New balance</span><b>{money(wallet.data?.available_minor, wallet.data?.currency)}</b></div>
+      {done && r.charged_minor < r.approved_minor && <p className="small muted">{money(r.approved_minor - r.charged_minor, r.currency)} not used was returned to your balance.</p>}
       {done && <button className="secondary block" onClick={() => setDisputing(true)}>Raise a dispute</button>}
       {r.status === 'approved' && <button className="ghost" onClick={async () => { try { await e.post(`/api/redemptions/${r.id}/cancel`); red.reload(); } catch (err: any) { alert(err.message); } }}>Cancel before fueling</button>}
       <button className="ghost" onClick={() => navigate('/employee')}>Back to my fuel</button>
@@ -241,7 +238,7 @@ function History({ w, reload }: { w: any; reload: () => void }) {
       {w.history.length === 0 && <Empty>No fuelings yet.</Empty>}
       {w.history.map((r: any) => (
         <div key={r.id} className="card" style={{ padding: 12, cursor: 'pointer' }} onClick={() => navigate(`/employee/receipt/${r.id}`)}>
-          <div className="row between"><b>{gal(r.dispensed_mgal ?? r.requested_mgal, 1)} gal {cap(r.grade)}</b><Status s={r.status} /></div>
+          <div className="row between"><b>{r.charged_minor != null ? money(r.charged_minor, r.currency) : r.approved_minor != null ? money(r.approved_minor, r.currency) : '—'} · {cap(r.grade)}{r.dispensed_mgal ? ` ${gal(r.dispensed_mgal, 1)} gal` : ''}</b><Status s={r.status} /></div>
           <div className="small muted">{r.station_name} · Pump {r.pump} · {when(r.completed_at ?? r.created_at)}</div>
         </div>
       ))}

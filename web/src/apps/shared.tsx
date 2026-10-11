@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, cap, gal, when, type Surface } from '../api';
+import { api, cap, gal, money, when, type Surface } from '../api';
 import { Empty, Modal, Status, useAction, useLoad, useMe } from '../ui';
 
 const DIST = ['dist_admin', 'dist_treasury', 'dist_approver'];
@@ -42,11 +42,12 @@ export function ExceptionsPanel({ surface, onlyOpen = true }: { surface: Surface
             {e.kind === 'shift_variance' && e.detail && typeof e.detail === 'object' && (
               <div className="table-wrap" style={{ marginTop: 8 }}>
                 <table>
-                  <thead><tr><th>Grade</th><th className="r">Digital</th><th className="r">Pump totals</th><th className="r">POS</th></tr></thead>
+                  <thead><tr><th>Fuel</th><th className="r">Charged</th><th className="r">POS</th><th className="r">Recorded gal</th><th className="r">Pump meter gal</th></tr></thead>
                   <tbody>
-                    {Object.keys(e.detail.pump).filter((g) => e.detail.pump[g] || e.detail.digital[g] || e.detail.pos[g]).map((g) => (
-                      <tr key={g}><td>{cap(g)}</td><td className="r num">{gal(e.detail.digital[g], 1)}</td>
-                        <td className="r num">{gal(e.detail.pump[g], 1)}</td><td className="r num">{gal(e.detail.pos[g], 1)}</td></tr>
+                    {Object.keys(e.detail.pump).map((g) => (
+                      <tr key={g}><td>{cap(g)}</td>
+                        <td className="r num">{money(e.detail.digital.amounts[g])}</td><td className="r num">{money(e.detail.pos[g])}</td>
+                        <td className="r num">{gal(e.detail.digital.gallons[g], 1)}</td><td className="r num">{gal(e.detail.pump[g], 1)}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -56,7 +57,7 @@ export function ExceptionsPanel({ surface, onlyOpen = true }: { surface: Surface
             {e.proposal && (
               <p className="small" style={{ marginTop: 6 }}>
                 Proposal by {e.proposed_by_name}: <b>{e.proposal.action.replace(/_/g, ' ')}</b>
-                {e.proposal.gallons ? ` ${e.proposal.gallons} gal` : ''} — {e.proposal.note}
+                {e.proposal.amount ? ` ${money(e.proposal.amount * 100)}` : ''} — {e.proposal.note}
               </p>
             )}
             {e.resolution && <p className="small muted" style={{ marginTop: 4 }}>{e.resolution}{e.resolved_by_name ? ` · ${e.resolved_by_name}` : ''}</p>}
@@ -85,12 +86,12 @@ export function ExceptionsPanel({ surface, onlyOpen = true }: { surface: Surface
 function ProposeModal({ surface, ex, onClose, onDone }: { surface: Surface; ex: any; onClose: () => void; onDone: () => void }) {
   const variance = ex.kind === 'shift_variance';
   const [action, setAction] = useState(variance ? 'accept_variance' : 'reverse');
-  const [gallons, setGallons] = useState('');
+  const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const { busy, run } = useAction();
   const submit = async () => {
     const body: any = { action, note };
-    if (action === 'reverse') body.gallons = Number(gallons);
+    if (action === 'reverse') body.amount = Number(amount);
     if (await run(() => api(surface).post(`/api/exceptions/${ex.id}/propose`, body), 'Sent for distributor decision')) onDone();
   };
   return (
@@ -99,20 +100,20 @@ function ProposeModal({ surface, ex, onClose, onDone }: { surface: Surface; ex: 
         <p className="small muted">{ex.summary}</p>
         {!variance && (
           <div className="seg">
-            <button className={action === 'reverse' ? 'on' : ''} onClick={() => setAction('reverse')}>Reverse gallons</button>
+            <button className={action === 'reverse' ? 'on' : ''} onClick={() => setAction('reverse')}>Refund to employee</button>
             <button className={action === 'reject_dispute' ? 'on' : ''} onClick={() => setAction('reject_dispute')}>Reject dispute</button>
           </div>
         )}
         {action === 'reverse' && (
-          <label>Gallons to return to the employee
-            <input type="number" min="0" step="0.1" value={gallons} onChange={(e) => setGallons(e.target.value)} />
+          <label>Amount to return to the employee (HTG)
+            <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
         )}
         <label>{variance ? 'Manager explanation' : 'Note'}
           <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
         </label>
         <p className="small muted">A different distributor approver must approve before anything posts to the ledger.</p>
-        <button disabled={busy || note.length < 3 || (action === 'reverse' && !(Number(gallons) > 0))} onClick={submit}>Submit</button>
+        <button disabled={busy || note.length < 3 || (action === 'reverse' && !(Number(amount) > 0))} onClick={submit}>Submit</button>
       </div>
     </Modal>
   );

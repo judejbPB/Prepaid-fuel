@@ -2,8 +2,9 @@ import { randomInt } from 'node:crypto';
 import { requireRole, verifySecret, type Actor } from '../auth.js';
 import type { Ctx } from '../context.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
-import { acct, GAL, type Line } from '../ledger.js';
-import { GRADES, nowIso, toMgal, valueOf } from '../units.js';
+import { acct, type Line } from '../ledger.js';
+import { gallonsFor, GRADES, nowIso, toMgal, toMinor, valueOf } from '../units.js';
+import { activeContract } from './funding.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from({ length: 10 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
@@ -48,17 +49,23 @@ export function openShift(ctx: Ctx, actor: Actor) {
 }
 
 function shiftDigitalTotals(ctx: Ctx, shiftId: number) {
-  const out: Record<string, number> = {};
+  const gallons: Record<string, number> = {};
+  const amounts: Record<string, number> = {};
   for (const r of ctx.db.all(
-    "SELECT grade, SUM(dispensed_mgal) AS m FROM redemptions WHERE shift_id = ? AND status = 'completed' GROUP BY grade",
+    `SELECT grade, SUM(dispensed_mgal) AS m, SUM(charged_minor) AS a FROM redemptions
+      WHERE shift_id = ? AND status = 'completed' GROUP BY grade`,
     shiftId,
-  )) out[r.grade] = Number(r.m);
-  return out;
+  )) {
+    gallons[r.grade] = Number(r.m);
+    amounts[r.grade] = Number(r.a);
+  }
+  return { gallons, amounts };
 }
 
 /**
- * Closes a shift by comparing digital redemptions with the attendant's pump meter and POS totals
- * for program sales. Variance beyond tolerance holds the shift and opens an exception.
+ * Closes a shift. Pump meters count gallons, so meter totals are compared with the gallons recorded on
+ * each redemption; the POS totals for program sales are compared in currency with what was charged.
+ * Variance beyond either tolerance holds the shift and opens an exception.
  */
 export function closeShift(
   ctx: Ctx,
@@ -79,31 +86,35 @@ export function closeShift(
     const digital = shiftDigitalTotals(ctx, shift.id);
     const pump: Record<string, number> = {};
     const pos: Record<string, number> = {};
-    let pumpVar = 0;
-    let posVar = 0;
+    let gallonVar = 0;
+    let moneyVar = 0;
     for (const g of GRADES) {
       pump[g] = toMgal(input.pumpTotals[g] ?? 0);
-      pos[g] = toMgal(input.posTotals[g] ?? 0);
-      pumpVar += Math.abs(pump[g] - (digital[g] ?? 0));
-      posVar += Math.abs(pos[g] - (digital[g] ?? 0));
+      pos[g] = toMinor(input.posTotals[g] ?? 0);
+      gallonVar += Math.abs(pump[g] - (digital.gallons[g] ?? 0));
+      moneyVar += Math.abs(pos[g] - (digital.amounts[g] ?? 0));
     }
-    const variance = Math.max(pumpVar, posVar);
-    const held = variance > ctx.config.varianceToleranceMgal;
+    const held = gallonVar > ctx.config.varianceToleranceMgal || moneyVar > ctx.config.varianceToleranceMinor;
     ctx.db.run(
-      `UPDATE shifts SET status = ?, closed_at = ?, digital_json = ?, pump_json = ?, pos_json = ?, variance_mgal = ? WHERE id = ?`,
-      held ? 'held' : 'closed', nowIso(), JSON.stringify(digital), JSON.stringify(pump), JSON.stringify(pos), variance, shift.id,
+      `UPDATE shifts SET status = ?, closed_at = ?, digital_json = ?, pump_json = ?, pos_json = ?, variance_mgal = ?, variance_minor = ?
+        WHERE id = ?`,
+      held ? 'held' : 'closed', nowIso(), JSON.stringify(digital), JSON.stringify(pump), JSON.stringify(pos),
+      gallonVar, moneyVar, shift.id,
     );
     if (held) {
       const station = ctx.db.get('SELECT name FROM stations WHERE id = ?', shift.station_id);
+      const parts = [];
+      if (moneyVar > ctx.config.varianceToleranceMinor) parts.push(`${(moneyVar / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} HTG`);
+      if (gallonVar > ctx.config.varianceToleranceMgal) parts.push(`${(gallonVar / 1000).toFixed(1)} gal`);
       ctx.db.run(
         `INSERT INTO exceptions (kind, ref_type, ref_id, station_id, summary, detail, created_by)
          VALUES ('shift_variance', 'shift', ?, ?, ?, ?, ?)`,
         shift.id, shift.station_id,
-        `${station.name} shift close: ${(variance / 1000).toFixed(1)} gal variance awaiting explanation`,
+        `${station.name} shift close: ${parts.join(' / ')} variance awaiting explanation`,
         JSON.stringify({ digital, pump, pos }), actor.userId,
       );
     }
-    ctx.db.audit(actor.userId, 'shift.close', 'shift', shift.id, { variance, held });
+    ctx.db.audit(actor.userId, 'shift.close', 'shift', shift.id, { gallonVar, moneyVar, held });
     return ctx.db.get('SELECT * FROM shifts WHERE id = ?', shift.id);
   });
 }
@@ -138,20 +149,35 @@ export function getRedemption(ctx: Ctx, id: number) {
   return { ...r, qr: qrPayload(r.code) };
 }
 
-/** Step 1 · Attendant creates a one-time request for an exact quantity, grade and pump. */
-export function createRequest(ctx: Ctx, actor: Actor, input: { grade: string; pump: number; gallons: number }) {
+/** Exactly one of `gallons` (pump preset) or `amount` (currency, e.g. "2,000 gourdes") is given. */
+export interface Quantity {
+  gallons?: number;
+  amount?: number;
+}
+
+function parseQuantity(q: Quantity): { mgal: number | null; minor: number | null } {
+  const hasG = q.gallons !== undefined && q.gallons !== null;
+  const hasA = q.amount !== undefined && q.amount !== null;
+  if (hasG === hasA) throw badRequest('bad_quantity', 'Give either gallons or an amount');
+  const mgal = hasG ? toMgal(q.gallons!) : null;
+  const minor = hasA ? toMinor(q.amount!) : null;
+  if ((mgal ?? 1) <= 0 || (minor ?? 1) <= 0) throw badRequest('bad_quantity', 'Quantity must be positive');
+  return { mgal, minor };
+}
+
+/** Step 1 · Attendant creates a one-time request for a grade and pump, in gallons or in currency. */
+export function createRequest(ctx: Ctx, actor: Actor, input: { grade: string; pump: number } & Quantity) {
   const { terminal, station } = attendantContext(ctx, actor);
-  if (!GRADES.includes(input.grade as any)) throw badRequest('bad_grade', 'Unknown grade');
-  const mgal = toMgal(input.gallons);
-  if (mgal <= 0) throw badRequest('bad_quantity', 'Quantity must be positive');
+  if (!GRADES.includes(input.grade as any)) throw badRequest('bad_grade', 'Only diesel and gasoline are sold');
+  const { mgal, minor } = parseQuantity(input);
   if (!Number.isInteger(input.pump) || input.pump < 1) throw badRequest('bad_pump', 'Pump number required');
   return ctx.db.tx(() => {
     const shift = currentShift(ctx, actor);
     if (!shift || shift.attendant_id !== actor.userId) throw conflict('no_shift', 'Open your shift first');
     const id = ctx.db.run(
-      `INSERT INTO redemptions (code, station_id, terminal_id, shift_id, attendant_id, pump, grade, requested_mgal, expires_at)
-       VALUES (?,?,?,?,?,?,?,?, datetime('now', ?))`,
-      newCode(), station.id, terminal.id, shift.id, actor.userId, input.pump, input.grade, mgal,
+      `INSERT INTO redemptions (code, station_id, terminal_id, shift_id, attendant_id, pump, grade, requested_mgal, requested_minor, expires_at)
+       VALUES (?,?,?,?,?,?,?,?,?, datetime('now', ?))`,
+      newCode(), station.id, terminal.id, shift.id, actor.userId, input.pump, input.grade, mgal, minor,
       `+${ctx.config.redemptionTtlSeconds} seconds`,
     ).id;
     ctx.db.audit(actor.userId, 'redemption.request', 'redemption', id, input);
@@ -169,6 +195,16 @@ function employeeContext(ctx: Ctx, actor: Actor) {
   return { emp, company };
 }
 
+/** Prices a request at the employee's company contract price. Gallons are for reference only. */
+function priceRequest(ctx: Ctx, companyId: number, red: any) {
+  const contract = ctx.db.get('SELECT * FROM contracts WHERE company_id = ? AND grade = ? AND active = 1', companyId, red.grade);
+  if (!contract) throw conflict('no_contract', `Your company has no ${red.grade} price yet`);
+  const price = contract.price_minor;
+  const amount = red.requested_minor ?? valueOf(red.requested_mgal, price);
+  const gallons = red.requested_mgal ?? gallonsFor(red.requested_minor, price);
+  return { price, currency: contract.currency as string, amount, gallons };
+}
+
 /** Step 2a · Employee scans the QR and sees exactly what they are approving. */
 export function previewRequest(ctx: Ctx, actor: Actor, scanned: string) {
   const { emp } = employeeContext(ctx, actor);
@@ -177,14 +213,16 @@ export function previewRequest(ctx: Ctx, actor: Actor, scanned: string) {
   if (!r) throw notFound('Fueling request');
   const red = getRedemption(ctx, r.id);
   if (red.status !== 'pending') throw conflict('not_pending', `This request is ${red.status}`);
-  const available = ctx.ledger.byGrade(acct.available(emp.id), true)[red.grade] ?? 0;
+  const priced = priceRequest(ctx, emp.company_id, red);
   return {
     id: red.id, code: red.code, station_name: red.station_name, pump: red.pump, grade: red.grade,
-    requested_mgal: red.requested_mgal, expires_at: red.expires_at, available_mgal: available,
+    amount_minor: priced.amount, gallons_mgal: priced.gallons, price_minor: priced.price, currency: priced.currency,
+    by_amount: red.requested_minor !== null, expires_at: red.expires_at,
+    available_minor: ctx.ledger.spendable(acct.available(emp.id)),
   };
 }
 
-/** Step 2b · Employee confirms with PIN. Gallons move available -> reserved. */
+/** Step 2b · Employee confirms with PIN. The price is locked and the amount moves available -> reserved. */
 export function approveRequest(ctx: Ctx, actor: Actor, input: { code: string; pin: string }) {
   const { emp, company } = employeeContext(ctx, actor);
   if (emp.status !== 'active') throw conflict('frozen', 'Your fuel wallet is frozen');
@@ -215,74 +253,80 @@ export function approveRequest(ctx: Ctx, actor: Actor, input: { code: string; pi
     const terminal = ctx.db.get('SELECT status FROM terminals WHERE id = ?', red.terminal_id);
     if (station.status !== 'active' || terminal.status !== 'active') throw conflict('frozen', 'Station is not accepting redemptions');
 
-    const picks = ctx.ledger.pickFifo(acct.available(emp.id), red.grade, red.requested_mgal);
+    const priced = priceRequest(ctx, emp.company_id, red);
+    const picks = ctx.ledger.pickFifo(acct.available(emp.id), priced.amount);
     const lines: Line[] = picks.flatMap((p) => [
-      { account: acct.available(emp.id), unit: GAL, lotId: p.lotId, debit: p.mgal },
-      { account: acct.reserved(emp.id), unit: GAL, lotId: p.lotId, credit: p.mgal },
+      { account: acct.available(emp.id), unit: p.currency, lotId: p.lotId, debit: p.amount },
+      { account: acct.reserved(emp.id), unit: p.currency, lotId: p.lotId, credit: p.amount },
     ]);
     const entryId = ctx.ledger.post({
       kind: 'redemption_reserved', refType: 'redemption', refId: red.id, companyId: emp.company_id,
-      memo: `${red.station_name} pump ${red.pump}`, createdBy: actor.userId, lines,
+      memo: `${red.station_name} pump ${red.pump} · ${red.grade} ≈ ${(priced.gallons / 1000).toFixed(2)} gal`,
+      createdBy: actor.userId, lines,
     });
     // Single use: the conditional update guarantees only one approval wins.
     const upd = ctx.db.run(
-      `UPDATE redemptions SET status = 'approved', employee_id = ?, company_id = ?, reserve_entry_id = ?, approved_at = ?
+      `UPDATE redemptions SET status = 'approved', employee_id = ?, company_id = ?, reserve_entry_id = ?, approved_at = ?,
+              price_minor = ?, currency = ?, approved_minor = ?, approved_mgal = ?
         WHERE id = ? AND status = 'pending'`,
-      emp.id, emp.company_id, entryId, nowIso(), red.id,
+      emp.id, emp.company_id, entryId, nowIso(), priced.price, priced.currency, priced.amount, priced.gallons, red.id,
     );
     if (upd.changes !== 1) throw conflict('not_pending', 'Request already used');
-    ctx.db.audit(actor.userId, 'redemption.approve', 'redemption', red.id);
+    ctx.db.audit(actor.userId, 'redemption.approve', 'redemption', red.id, { amount: priced.amount, price: priced.price });
     return getRedemption(ctx, red.id);
   });
 }
 
-/** Step 4 · Attendant confirms the dispensed quantity. Only now does fuel count as redeemed. */
-export function completeRequest(ctx: Ctx, actor: Actor, id: number, dispensedGallons: number) {
+/**
+ * Step 4 · Attendant confirms what was actually dispensed, from the pump display (gallons or amount).
+ * Only now is the money charged; anything approved but not dispensed goes back to the employee.
+ */
+export function completeRequest(ctx: Ctx, actor: Actor, id: number, dispensed: Quantity) {
   attendantContext(ctx, actor);
   return ctx.db.tx(() => {
     const red = getRedemption(ctx, id);
     if (red.terminal_id !== actor.terminalId) throw forbidden('Request belongs to another terminal');
     if (red.status !== 'approved') throw conflict('bad_state', `Request is ${red.status}`);
-    const dispensed = toMgal(dispensedGallons);
-    if (dispensed <= 0) throw badRequest('bad_quantity', 'Use cancel if nothing was dispensed');
-    if (dispensed > red.requested_mgal) throw badRequest('over_dispense', 'Cannot dispense more than the employee approved');
+    const q = parseQuantity(dispensed);
+    let charged = q.minor ?? valueOf(q.mgal!, red.price_minor);
+    // A full fill of a gallon request charges exactly what was approved (no rounding drift).
+    if (q.mgal !== null && q.mgal === red.approved_mgal) charged = red.approved_minor;
+    const mgal = q.mgal ?? gallonsFor(charged, red.price_minor);
+    if (charged > red.approved_minor) throw badRequest('over_dispense', 'Cannot dispense more than the employee approved');
 
     const reserved = ctx.db.all(
-      `SELECT jl.lot_id, jl.credit AS mgal, l.price_minor, l.currency FROM journal_lines jl JOIN lots l ON l.id = jl.lot_id
-        WHERE jl.entry_id = ? AND jl.account = ? ORDER BY jl.id`,
+      'SELECT lot_id, credit AS amount, unit FROM journal_lines WHERE entry_id = ? AND account = ? ORDER BY id',
       red.reserve_entry_id, acct.reserved(red.employee_id),
     );
     const lines: Line[] = [];
-    let toConfirm = dispensed;
+    let toCharge = charged;
     for (const r of reserved) {
-      const confirm = Math.min(toConfirm, r.mgal);
-      const release = r.mgal - confirm;
-      toConfirm -= confirm;
-      if (confirm > 0) {
-        const value = valueOf(confirm, r.price_minor);
+      const take = Math.min(toCharge, r.amount);
+      const release = r.amount - take;
+      toCharge -= take;
+      if (take > 0) {
         lines.push(
-          { account: acct.reserved(red.employee_id), unit: GAL, lotId: r.lot_id, debit: confirm },
-          { account: acct.clearing(red.station_id), unit: GAL, lotId: r.lot_id, credit: confirm },
-          { account: acct.prepaidLiability(red.company_id), unit: r.currency, debit: value },
-          { account: acct.fuelRevenue, unit: r.currency, credit: value },
+          { account: acct.reserved(red.employee_id), unit: r.unit, lotId: r.lot_id, debit: take },
+          { account: acct.clearing(red.station_id), unit: r.unit, lotId: r.lot_id, credit: take },
         );
       }
       if (release > 0) {
         lines.push(
-          { account: acct.reserved(red.employee_id), unit: GAL, lotId: r.lot_id, debit: release },
-          { account: acct.available(red.employee_id), unit: GAL, lotId: r.lot_id, credit: release },
+          { account: acct.reserved(red.employee_id), unit: r.unit, lotId: r.lot_id, debit: release },
+          { account: acct.available(red.employee_id), unit: r.unit, lotId: r.lot_id, credit: release },
         );
       }
     }
     const entryId = ctx.ledger.post({
       kind: 'fuel_confirmed', refType: 'redemption', refId: red.id, companyId: red.company_id,
-      memo: `${red.station_name} pump ${red.pump} · ${(dispensed / 1000).toFixed(3)} gal`, createdBy: actor.userId, lines,
+      memo: `${red.station_name} pump ${red.pump} · ${(mgal / 1000).toFixed(2)} gal ${red.grade} @ ${(red.price_minor / 100).toFixed(2)}`,
+      createdBy: actor.userId, lines,
     });
     ctx.db.run(
-      "UPDATE redemptions SET status = 'completed', dispensed_mgal = ?, confirm_entry_id = ?, completed_at = ? WHERE id = ?",
-      dispensed, entryId, nowIso(), red.id,
+      "UPDATE redemptions SET status = 'completed', dispensed_mgal = ?, charged_minor = ?, confirm_entry_id = ?, completed_at = ? WHERE id = ?",
+      mgal, charged, entryId, nowIso(), red.id,
     );
-    ctx.db.audit(actor.userId, 'redemption.complete', 'redemption', red.id, { dispensed });
+    ctx.db.audit(actor.userId, 'redemption.complete', 'redemption', red.id, { mgal, charged });
     return getRedemption(ctx, red.id);
   });
 }

@@ -66,15 +66,15 @@ describe('api', () => {
 
     const before = (await call('GET', '/api/wallet', { token: emp })).json;
     const preview = await call('POST', '/api/wallet/preview', { token: emp, body: { code: req.qr } });
-    expect(preview.json).toMatchObject({ pump: 3, grade: 'diesel', requested_mgal: 12000 });
+    expect(preview.json).toMatchObject({ pump: 3, grade: 'diesel', gallons_mgal: 12000, amount_minor: 798000 });
     const approved = await call('POST', '/api/wallet/approve', { token: emp, body: { code: req.qr, pin: DEMO_PIN } });
     expect(approved.json.status).toBe('approved');
     const done = await call('POST', `/api/redemptions/${req.id}/complete`, { token: att, body: { gallons: 12 } });
     expect(done.json.status).toBe('completed');
     const after = (await call('GET', '/api/wallet', { token: emp })).json;
-    expect(before.by_grade.diesel - after.by_grade.diesel).toBe(12000);
+    expect(before.available_minor - after.available_minor).toBe(798000); // 12 gal x 665.00 HTG
 
-    const closed = await call('POST', '/api/shifts/close', { token: att, body: { pumpTotals: { diesel: 24 }, posTotals: { diesel: 12 } } });
+    const closed = await call('POST', '/api/shifts/close', { token: att, body: { pumpTotals: { diesel: 24 }, posTotals: { diesel: 7980 } } });
     expect(closed.json.status).toBe('held');
   });
 });

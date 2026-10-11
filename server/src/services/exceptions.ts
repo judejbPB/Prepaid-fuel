@@ -1,14 +1,16 @@
 import { DISTRIBUTOR, requireRole, type Actor } from '../auth.js';
 import type { Ctx } from '../context.js';
 import { badRequest, conflict, forbidden, notFound } from '../errors.js';
-import { acct, GAL, type Line } from '../ledger.js';
-import { nowIso, toMgal, valueOf } from '../units.js';
+import { acct, type Line } from '../ledger.js';
+import { nowIso, toMinor } from '../units.js';
+
+const fmt = (minor: number, ccy = 'HTG') => `${(minor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${ccy}`;
 
 export type Proposal =
   | { action: 'accept_variance'; note: string }
-  | { action: 'reverse'; gallons: number; note: string }
+  | { action: 'reverse'; amount: number; note: string }
   | { action: 'reject_dispute'; note: string }
-  | { action: 'return_to_company'; employeeId: number; grade: string; gallons: number; note: string };
+  | { action: 'return_to_company'; employeeId: number; amount: number; note: string };
 
 export function getException(ctx: Ctx, id: number) {
   const e = ctx.db.get(
@@ -58,7 +60,7 @@ export function raiseDispute(ctx: Ctx, actor: Actor, redemptionId: number, reaso
       `INSERT INTO exceptions (kind, ref_type, ref_id, company_id, station_id, summary, detail, created_by)
        VALUES ('dispute', 'redemption', ?, ?, ?, ?, ?, ?)`,
       red.id, red.company_id, red.station_id,
-      `Dispute on ${(red.dispensed_mgal / 1000).toFixed(1)} gal ${red.grade} at ${red.station_name} pump ${red.pump}`,
+      `Dispute on ${fmt(red.charged_minor, red.currency)} (${(red.dispensed_mgal / 1000).toFixed(1)} gal ${red.grade}) at ${red.station_name} pump ${red.pump}`,
       reason, actor.userId,
     ).id;
     ctx.db.audit(actor.userId, 'exception.dispute', 'exception', id, { redemptionId, reason });
@@ -66,9 +68,9 @@ export function raiseDispute(ctx: Ctx, actor: Actor, redemptionId: number, reaso
   });
 }
 
-/** Company approver asks to return an employee's unused gallons to the company pool (e.g. departure). */
+/** Company approver asks to return an employee's unused balance to the company pool (e.g. departure). */
 export function requestReturnToCompany(
-  ctx: Ctx, actor: Actor, input: { employeeId: number; grade: string; gallons: number; note: string },
+  ctx: Ctx, actor: Actor, input: { employeeId: number; amount: number; note: string },
 ) {
   requireRole(actor, ['co_approver']);
   const emp = ctx.db.get('SELECT * FROM employees WHERE id = ?', input.employeeId);
@@ -77,7 +79,7 @@ export function requestReturnToCompany(
   const id = ctx.db.run(
     `INSERT INTO exceptions (kind, status, ref_type, ref_id, company_id, summary, proposal_json, proposed_by, created_by)
      VALUES ('adjustment', 'proposed', 'employee', ?, ?, ?, ?, ?, ?)`,
-    emp.id, emp.company_id, `Return ${input.gallons} gal ${input.grade} from ${emp.name} to company pool`,
+    emp.id, emp.company_id, `Return ${fmt(toMinor(input.amount))} from ${emp.name} to company pool`,
     JSON.stringify(proposal), actor.userId, actor.userId,
   ).id;
   ctx.db.audit(actor.userId, 'exception.adjustment', 'exception', id, input);
@@ -97,9 +99,9 @@ export function propose(ctx: Ctx, actor: Actor, id: number, proposal: Proposal) 
     } else if (e.kind === 'dispute') {
       requireRole(actor, ['st_manager', ...DISTRIBUTOR]);
       if (proposal.action === 'reverse') {
-        const red = ctx.db.get('SELECT dispensed_mgal FROM redemptions WHERE id = ?', e.ref_id);
-        const mgal = toMgal(proposal.gallons);
-        if (mgal <= 0 || mgal > red.dispensed_mgal) throw badRequest('bad_quantity', 'Reversal must be within the dispensed quantity');
+        const red = ctx.db.get('SELECT charged_minor FROM redemptions WHERE id = ?', e.ref_id);
+        const amount = toMinor(proposal.amount);
+        if (amount <= 0 || amount > red.charged_minor) throw badRequest('bad_amount', 'Reversal must be within the amount charged');
       } else if (proposal.action !== 'reject_dispute') {
         throw badRequest('bad_action', 'Disputes are reversed or rejected');
       }
@@ -138,7 +140,7 @@ export function decide(ctx: Ctx, actor: Actor, id: number, approve: boolean, not
     if (p.action === 'accept_variance') {
       ctx.db.run("UPDATE shifts SET status = 'accepted' WHERE id = ?", e.ref_id);
     } else if (p.action === 'reverse') {
-      entryId = reverseRedemption(ctx, actor, e.ref_id, toMgal(p.gallons), id);
+      entryId = reverseRedemption(ctx, actor, e.ref_id, toMinor(p.amount), id);
     } else if (p.action === 'return_to_company') {
       entryId = returnToCompany(ctx, actor, p, id);
     }
@@ -151,32 +153,28 @@ export function decide(ctx: Ctx, actor: Actor, id: number, approve: boolean, not
   });
 }
 
-/** Reversal approved: station clearing -> employee available, on the same lots that were consumed. */
-function reverseRedemption(ctx: Ctx, actor: Actor, redemptionId: number, mgal: number, exceptionId: number) {
+/** Reversal approved: station clearing -> employee available, on the same lots that were charged. */
+function reverseRedemption(ctx: Ctx, actor: Actor, redemptionId: number, amount: number, exceptionId: number) {
   const red = ctx.db.get('SELECT * FROM redemptions WHERE id = ?', redemptionId);
   const reversedAlready = ctx.db.get(
     `SELECT COALESCE(SUM(jl.debit), 0) AS m FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
       WHERE je.kind = 'reversal_approved' AND je.ref_type = 'redemption' AND je.ref_id = ? AND jl.account = ?`,
     redemptionId, acct.clearing(red.station_id),
   ).m;
-  if (mgal + reversedAlready > red.dispensed_mgal) throw conflict('over_reversal', 'Reversal exceeds dispensed quantity');
-  const confirmed = ctx.db.all(
-    `SELECT jl.lot_id, jl.credit AS mgal, l.price_minor, l.currency FROM journal_lines jl JOIN lots l ON l.id = jl.lot_id
-      WHERE jl.entry_id = ? AND jl.account = ? ORDER BY jl.id DESC`,
+  if (amount + reversedAlready > red.charged_minor) throw conflict('over_reversal', 'Reversal exceeds the amount charged');
+  const charged = ctx.db.all(
+    'SELECT lot_id, credit AS amount, unit FROM journal_lines WHERE entry_id = ? AND account = ? ORDER BY id DESC',
     red.confirm_entry_id, acct.clearing(red.station_id),
   );
   const lines: Line[] = [];
-  let left = mgal;
-  for (const c of confirmed) {
-    const take = Math.min(left, c.mgal);
+  let left = amount;
+  for (const c of charged) {
+    const take = Math.min(left, c.amount);
     if (take <= 0) break;
     left -= take;
-    const value = valueOf(take, c.price_minor);
     lines.push(
-      { account: acct.clearing(red.station_id), unit: GAL, lotId: c.lot_id, debit: take },
-      { account: acct.available(red.employee_id), unit: GAL, lotId: c.lot_id, credit: take },
-      { account: acct.fuelRevenue, unit: c.currency, debit: value },
-      { account: acct.prepaidLiability(red.company_id), unit: c.currency, credit: value },
+      { account: acct.clearing(red.station_id), unit: c.unit, lotId: c.lot_id, debit: take },
+      { account: acct.available(red.employee_id), unit: c.unit, lotId: c.lot_id, credit: take },
     );
   }
   return ctx.ledger.post({
@@ -187,13 +185,13 @@ function reverseRedemption(ctx: Ctx, actor: Actor, redemptionId: number, mgal: n
 
 function returnToCompany(ctx: Ctx, actor: Actor, p: Extract<Proposal, { action: 'return_to_company' }>, exceptionId: number) {
   const emp = ctx.db.get('SELECT * FROM employees WHERE id = ?', p.employeeId);
-  const picks = ctx.ledger.pickFifo(acct.available(emp.id), p.grade, toMgal(p.gallons));
+  const picks = ctx.ledger.pickFifo(acct.available(emp.id), toMinor(p.amount));
   return ctx.ledger.post({
     kind: 'adjustment', refType: 'employee', refId: emp.id, companyId: emp.company_id,
     memo: `Exception #${exceptionId}: ${p.note}`, createdBy: actor.userId,
     lines: picks.flatMap((pk) => [
-      { account: acct.available(emp.id), unit: GAL, lotId: pk.lotId, debit: pk.mgal },
-      { account: acct.unallocated(emp.company_id), unit: GAL, lotId: pk.lotId, credit: pk.mgal },
+      { account: acct.available(emp.id), unit: pk.currency, lotId: pk.lotId, debit: pk.amount },
+      { account: acct.unallocated(emp.company_id), unit: pk.currency, lotId: pk.lotId, credit: pk.amount },
     ]),
   });
 }

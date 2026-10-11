@@ -1,11 +1,11 @@
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
-import { api, cap, gal, session, when } from '../api';
+import { api, cap, gal, money, session, when } from '../api';
 import { Authed, Empty, Kpi, PageHead, Shell, Status, useAction, useLoad, useLogout, useMe } from '../ui';
 import { ExceptionsPanel } from './shared';
 
 const s = api('station');
-const GRADES = ['diesel', 'gasoline', 'premium'];
+const GRADES = ['diesel', 'gasoline'];
 
 export default function Station() {
   const [terminal, setTerminal] = useState(session.terminalInfo());
@@ -98,7 +98,8 @@ function Terminal() {
             <table className="mt"><tbody>
               {data?.redemptions.map((r: any) => (
                 <tr key={r.id}><td className="small">{when(r.created_at)}</td><td>Pump {r.pump}</td><td>{cap(r.grade)}</td>
-                  <td className="r num">{gal(r.dispensed_mgal ?? r.requested_mgal, 1)} gal</td><td>{r.employee_name ?? '—'}</td><td className="r"><Status s={r.status} /></td></tr>
+                  <td className="r num">{r.charged_minor != null ? money(r.charged_minor) : r.requested_minor != null ? money(r.requested_minor) : `${gal(r.requested_mgal, 1)} gal`}</td>
+                  <td className="r num small muted">{r.dispensed_mgal != null ? `${gal(r.dispensed_mgal, 2)} gal` : ''}</td><td>{r.employee_name ?? '—'}</td><td className="r"><Status s={r.status} /></td></tr>
               ))}
             </tbody></table>
             {!data?.redemptions.length && <Empty>No requests yet this shift.</Empty>}
@@ -112,7 +113,9 @@ function Terminal() {
 function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) => void }) {
   const [grade, setGrade] = useState('diesel');
   const [pump, setPump] = useState('1');
+  const [mode, setMode] = useState<'amount' | 'gallons'>('amount');
   const [qty, setQty] = useState('');
+  const [dispMode, setDispMode] = useState<'amount' | 'gallons'>('amount');
   const [dispensed, setDispensed] = useState('');
   const [qr, setQr] = useState('');
   const { busy, run } = useAction();
@@ -121,18 +124,23 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
     if (active?.qr) QRCode.toDataURL(active.qr, { margin: 1, width: 240 }).then(setQr);
   }, [active?.qr]);
   useEffect(() => {
-    if (active?.status === 'approved') setDispensed(String(active.requested_mgal / 1000));
+    if (active?.status !== 'approved') return;
+    // Pre-fill with what was approved, in the unit the attendant asked in.
+    const byGallons = active.requested_mgal != null;
+    setDispMode(byGallons ? 'gallons' : 'amount');
+    setDispensed(byGallons ? String(active.approved_mgal / 1000) : String(active.approved_minor / 100));
   }, [active?.status]);
 
   const create = async () => {
-    const r = await run(() => s.post('/api/redemptions', { grade, pump: Number(pump), gallons: Number(qty) }));
+    const r = await run(() => s.post('/api/redemptions', { grade, pump: Number(pump), [mode]: Number(qty) }));
     if (r) setActive(r);
   };
   const cancel = async () => { const r = await run(() => s.post(`/api/redemptions/${active.id}/cancel`), 'Request cancelled'); if (r) setActive(null); };
   const complete = async () => {
-    const r = await run(() => s.post(`/api/redemptions/${active.id}/complete`, { gallons: Number(dispensed) }), 'Fuel confirmed');
+    const r = await run(() => s.post(`/api/redemptions/${active.id}/complete`, { [dispMode]: Number(dispensed) }), 'Sale confirmed');
     if (r) setActive(r);
   };
+  const requested = (r: any) => (r.requested_minor != null ? money(r.requested_minor) : `${gal(r.requested_mgal, 1)} gal`);
 
   const step = !active ? 1 : active.status === 'pending' ? 2 : active.status === 'approved' ? 3 : 4;
   return (
@@ -143,36 +151,51 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
             <h3>New redemption request</h3>
             <div className="small muted mt">Fuel</div>
             <div className="seg" style={{ marginTop: 6 }}>
-              {GRADES.map((g) => <button key={g} className={`${grade === g ? 'on' : ''} ${g === 'premium' ? 'dashed' : ''}`} onClick={() => setGrade(g)}>{cap(g)}</button>)}
+              {GRADES.map((g) => <button key={g} className={grade === g ? 'on' : ''} onClick={() => setGrade(g)}>{cap(g)}</button>)}
+            </div>
+            <div className="small muted mt">Customer asks for</div>
+            <div className="seg" style={{ marginTop: 6 }}>
+              <button className={mode === 'amount' ? 'on' : ''} onClick={() => setMode('amount')}>An amount (HTG)</button>
+              <button className={mode === 'gallons' ? 'on' : ''} onClick={() => setMode('gallons')}>Gallons</button>
             </div>
             <div className="grid g2 mt">
               <label>Pump<input type="number" min="1" value={pump} onChange={(e) => setPump(e.target.value)} /></label>
-              <label>Quantity (gal)<input type="number" step="0.1" min="0" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="12.0" style={{ fontSize: 22, fontWeight: 700 }} /></label>
+              <label>{mode === 'amount' ? 'Amount (HTG)' : 'Quantity (gal)'}
+                <input type="number" step={mode === 'amount' ? '1' : '0.1'} min="0" value={qty} onChange={(e) => setQty(e.target.value)}
+                  placeholder={mode === 'amount' ? '2000' : '12.0'} style={{ fontSize: 22, fontWeight: 700 }} /></label>
             </div>
+            <p className="small muted mt">The employee’s company contract price is applied when they approve.</p>
             <button className="block mt" disabled={busy || !(Number(qty) > 0) || !(Number(pump) > 0)} onClick={create}>Create request</button>
           </>}
           {step === 2 && <>
             <h3>Waiting for employee approval</h3>
             <div className="kv mt"><span>Fuel</span><b>{cap(active.grade)}</b></div>
             <div className="kv"><span>Pump</span><b>{active.pump}</b></div>
-            <div className="kv"><span>Quantity</span><b style={{ fontSize: 22 }}>{gal(active.requested_mgal, 1)} gal</b></div>
+            <div className="kv"><span>Requested</span><b style={{ fontSize: 22 }}>{requested(active)}</b></div>
             <p className="small muted mt">Ask the employee to scan the QR with their BOUSOL app and confirm with their PIN. Do not dispense yet. Request expires {when(active.expires_at)}.</p>
             <button className="secondary mt" disabled={busy} onClick={cancel}>Cancel request</button>
           </>}
           {step === 3 && <>
             <h3>Approved — dispense now</h3>
-            <div className="banner ok mt"><span className="grow">{active.employee_name} · {active.company_name} approved <b>{gal(active.requested_mgal, 1)} gal {active.grade}</b> at pump {active.pump}.</span></div>
-            <label className="mt">Gallons actually dispensed<input type="number" step="0.001" value={dispensed} onChange={(e) => setDispensed(e.target.value)} style={{ fontSize: 22, fontWeight: 700 }} /></label>
-            <p className="small muted">If the pump stopped early, enter the meter reading. Any remainder goes back to the employee.</p>
+            <div className="banner ok mt"><span className="grow">{active.employee_name} · {active.company_name} approved <b>{money(active.approved_minor, active.currency)}</b>
+              {' '}= {gal(active.approved_mgal, 2)} gal {active.grade} at {money(active.price_minor, active.currency)}/gal, pump {active.pump}.</span></div>
+            <div className="small muted mt">Pump display shows</div>
+            <div className="seg" style={{ marginTop: 6 }}>
+              <button className={dispMode === 'amount' ? 'on' : ''} onClick={() => { setDispMode('amount'); setDispensed(String(active.approved_minor / 100)); }}>Amount (HTG)</button>
+              <button className={dispMode === 'gallons' ? 'on' : ''} onClick={() => { setDispMode('gallons'); setDispensed(String(active.approved_mgal / 1000)); }}>Gallons</button>
+            </div>
+            <label className="mt">{dispMode === 'amount' ? 'Amount actually dispensed (HTG)' : 'Gallons actually dispensed'}
+              <input type="number" step={dispMode === 'amount' ? '0.01' : '0.001'} value={dispensed} onChange={(e) => setDispensed(e.target.value)} style={{ fontSize: 22, fontWeight: 700 }} /></label>
+            <p className="small muted">If the pump stopped early, enter the display reading. Anything not used goes back to the employee.</p>
             <div className="row mt">
-              <button disabled={busy || !(Number(dispensed) > 0)} onClick={complete}>Confirm dispensed</button>
+              <button disabled={busy || !(Number(dispensed) > 0)} onClick={complete}>Confirm sale</button>
               <button className="secondary" disabled={busy} onClick={cancel}>Nothing dispensed — cancel</button>
             </div>
           </>}
           {step === 4 && <>
             <h3>{active.status === 'completed' ? 'Redeemed' : cap(active.status)}</h3>
             {active.status === 'completed'
-              ? <p className="mt"><b style={{ fontSize: 22 }}>{gal(active.dispensed_mgal, 1)} gal {active.grade}</b> · pump {active.pump} · {active.employee_name}</p>
+              ? <p className="mt"><b style={{ fontSize: 22 }}>{money(active.charged_minor, active.currency)}</b> · {gal(active.dispensed_mgal, 2)} gal {active.grade} · pump {active.pump} · {active.employee_name}</p>
               : <p className="mt muted">The request was {active.status}. Create a new one.</p>}
             <button className="mt" onClick={() => { setActive(null); setQty(''); }}>New request</button>
           </>}
@@ -205,14 +228,16 @@ function CloseShift({ onBack, onClosed }: { onBack: () => void; onClosed: () => 
     if (out) { setResult(out); onClosed(); }
   };
   if (result) {
-    const sum = (j: string) => Object.values(JSON.parse(j) as Record<string, number>).reduce((a, b) => a + b, 0);
+    const sum = (o: Record<string, number>) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
+    const digital = JSON.parse(result.digital_json);
     return (
       <div className="card white mt">
         <div className="row between"><h2 style={{ margin: 0 }}>Shift close</h2><Status s={result.status} /></div>
-        <div className="grid g3 mt">
-          <Kpi label="Digital redemptions" value={`${gal(sum(result.digital_json), 1)} gal`} />
-          <Kpi label="Pump totals" value={`${gal(sum(result.pump_json), 1)} gal`} />
-          <Kpi label="Variance" value={`${gal(result.variance_mgal, 1)} gal`} bad={result.status === 'held'} />
+        <div className="grid g4 mt">
+          <Kpi label="Charged to wallets" value={money(sum(digital.amounts))} />
+          <Kpi label="POS program sales" value={money(sum(JSON.parse(result.pos_json)))} />
+          <Kpi label="Amount variance" value={money(result.variance_minor)} bad={result.variance_minor > 0 && result.status === 'held'} />
+          <Kpi label="Pump meter variance" value={`${gal(result.variance_mgal, 1)} gal`} sub={`${gal(sum(digital.gallons), 1)} gal recorded`} />
         </div>
         <p className="small muted mt">{result.status === 'held' ? 'Next: manager explanation, then distributor decision.' : 'Shift reconciled. You can sign out.'}</p>
       </div>
@@ -221,12 +246,12 @@ function CloseShift({ onBack, onClosed }: { onBack: () => void; onClosed: () => 
   return (
     <div className="card white mt">
       <div className="row between"><h2 style={{ margin: 0 }}>Close shift</h2><button className="ghost" onClick={onBack}>Back</button></div>
-      <p className="small muted">Enter the program totals from the pump meters and the POS for this shift. They are compared to digital redemptions.</p>
-      <table className="mt"><thead><tr><th>Grade</th><th>Pump totals (gal)</th><th>POS program sales (gal)</th></tr></thead><tbody>
+      <p className="small muted">Enter this shift’s program totals: POS sales in HTG, and the pump meter gallons. They are compared with what was charged to employee wallets.</p>
+      <table className="mt"><thead><tr><th>Fuel</th><th>POS program sales (HTG)</th><th>Pump meter (gal)</th></tr></thead><tbody>
         {GRADES.map((g) => (
           <tr key={g}><td>{cap(g)}</td>
-            <td><input type="number" step="0.1" value={pump[g] ?? ''} onChange={(e) => setPump({ ...pump, [g]: e.target.value })} /></td>
-            <td><input type="number" step="0.1" value={pos[g] ?? ''} onChange={(e) => setPos({ ...pos, [g]: e.target.value })} /></td></tr>
+            <td><input type="number" step="0.01" value={pos[g] ?? ''} onChange={(e) => setPos({ ...pos, [g]: e.target.value })} /></td>
+            <td><input type="number" step="0.1" value={pump[g] ?? ''} onChange={(e) => setPump({ ...pump, [g]: e.target.value })} /></td></tr>
         ))}
       </tbody></table>
       <button className="mt" disabled={busy} onClick={submit}>Close shift</button>
@@ -251,7 +276,7 @@ function Manager() {
           <table><tbody>
             {shifts.data?.slice(0, 8).map((sh: any) => (
               <tr key={sh.id}><td>#{sh.id}</td><td>{sh.attendant_name}</td><td className="small">{when(sh.opened_at)}</td>
-                <td className="r num">{sh.variance_mgal != null ? `${gal(sh.variance_mgal, 1)} gal var.` : ''}</td><td className="r"><Status s={sh.status} /></td></tr>
+                <td className="r num small">{sh.variance_minor != null ? `${money(sh.variance_minor)} · ${gal(sh.variance_mgal, 1)} gal var.` : ''}</td><td className="r"><Status s={sh.status} /></td></tr>
             ))}
           </tbody></table>
         </div>
@@ -260,11 +285,12 @@ function Manager() {
       <div className="card white mt table-wrap">
         <h2>Recent redemptions</h2>
         <table>
-          <thead><tr><th>When</th><th>Pump</th><th>Fuel</th><th className="r">Gallons</th><th>Employee</th><th>Company</th><th>Status</th></tr></thead>
+          <thead><tr><th>When</th><th>Pump</th><th>Fuel</th><th className="r">Amount</th><th className="r">Gallons</th><th>Employee</th><th>Company</th><th>Status</th></tr></thead>
           <tbody>
             {data?.redemptions.map((r: any) => (
               <tr key={r.id}><td className="small">{when(r.created_at)}</td><td>{r.pump}</td><td>{cap(r.grade)}</td>
-                <td className="r num">{gal(r.dispensed_mgal ?? r.requested_mgal, 1)}</td><td>{r.employee_name ?? '—'}</td><td>{r.company_name ?? '—'}</td><td><Status s={r.status} /></td></tr>
+                <td className="r num">{r.charged_minor != null ? money(r.charged_minor) : '—'}</td><td className="r num">{r.dispensed_mgal != null ? gal(r.dispensed_mgal, 2) : '—'}</td>
+                <td>{r.employee_name ?? '—'}</td><td>{r.company_name ?? '—'}</td><td><Status s={r.status} /></td></tr>
             ))}
           </tbody>
         </table>

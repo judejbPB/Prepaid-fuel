@@ -1,58 +1,65 @@
 import { COMPANY, DISTRIBUTOR, requireCompany, requireRole, type Actor } from '../auth.js';
 import type { Ctx } from '../context.js';
 import { forbidden } from '../errors.js';
-import { acct, GAL } from '../ledger.js';
+import { acct } from '../ledger.js';
+import { gallonsFor } from '../units.js';
 import { listBatches, listRecurring } from './allocation.js';
 import { listExceptions } from './exceptions.js';
 import { listFunding } from './funding.js';
 import { listRedemptions } from './redemption.js';
 
-/** Sum of credits minus debits of gallon accounts matching a LIKE pattern, optionally by company lots. */
-function sumGallons(ctx: Ctx, pattern: string, companyId?: number) {
+/** Sum of credits minus debits (minor units) of accounts matching a LIKE pattern, optionally for one company's lots. */
+function sumAccounts(ctx: Ctx, pattern: string, companyId?: number) {
   const row = ctx.db.get(
     `SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS b FROM journal_lines jl
        ${companyId ? 'JOIN lots l ON l.id = jl.lot_id AND l.company_id = ?' : ''}
-      WHERE jl.unit = '${GAL}' AND jl.account LIKE ?`,
+      WHERE jl.account LIKE ?`,
     ...(companyId ? [companyId, pattern] : [pattern]),
   );
   return Number(row?.b ?? 0);
 }
 
+const contractsOf = (ctx: Ctx, companyId: number) =>
+  ctx.db.all('SELECT grade, price_minor, currency FROM contracts WHERE company_id = ? AND active = 1 ORDER BY grade', companyId);
+
+/** Reference only: how many gallons of each grade an amount buys at the company's contract prices. */
+const gallonsReference = (contracts: { grade: string; price_minor: number }[], minor: number) =>
+  Object.fromEntries(contracts.map((c) => [c.grade, gallonsFor(minor, c.price_minor)]));
+
 export function distributorDashboard(ctx: Ctx, actor: Actor) {
   requireRole(actor, DISTRIBUTOR);
-  const unallocated = sumGallons(ctx, 'co:%:unallocated');
-  const available = sumGallons(ctx, 'emp:%:available');
-  const reserved = sumGallons(ctx, 'emp:%:reserved');
-  const redemptionsToday = ctx.db.all(
-    `SELECT s.id, s.name, COALESCE(SUM(r.dispensed_mgal), 0) AS mgal, COUNT(r.id) AS count
+  const unallocated = sumAccounts(ctx, 'co:%:unallocated');
+  const available = sumAccounts(ctx, 'emp:%:available');
+  const reserved = sumAccounts(ctx, 'emp:%:reserved');
+  const salesToday = ctx.db.all(
+    `SELECT s.id, s.name, COALESCE(SUM(r.charged_minor), 0) AS minor, COALESCE(SUM(r.dispensed_mgal), 0) AS mgal, COUNT(r.id) AS count
        FROM stations s LEFT JOIN redemptions r ON r.station_id = s.id AND r.status = 'completed'
         AND date(r.completed_at) = date('now')
-      GROUP BY s.id ORDER BY mgal DESC, s.name`,
+      GROUP BY s.id ORDER BY minor DESC, s.name`,
   );
   const companies = ctx.db.all('SELECT * FROM companies ORDER BY name').map((c) => ({
     ...c,
-    unallocated_mgal: sumGallons(ctx, acct.unallocated(c.id), c.id),
-    allocated_mgal: sumGallons(ctx, 'emp:%:available', c.id) + sumGallons(ctx, 'emp:%:reserved', c.id),
-    redeemed_mgal: sumGallons(ctx, 'stn:%:clearing', c.id),
-    liability_minor: ctx.ledger.balance(acct.prepaidLiability(c.id)),
-    contracts: ctx.db.all('SELECT grade, price_minor, currency FROM contracts WHERE company_id = ? AND active = 1', c.id),
+    unallocated_minor: sumAccounts(ctx, acct.unallocated(c.id), c.id),
+    allocated_minor: sumAccounts(ctx, 'emp:%:available', c.id) + sumAccounts(ctx, 'emp:%:reserved', c.id),
+    redeemed_minor: sumAccounts(ctx, 'stn:%:clearing', c.id),
+    contracts: contractsOf(ctx, c.id),
   }));
   const funding = listFunding(ctx, actor);
   return {
     kpis: {
       deposits_verified: funding.filter((f) => f.status === 'matched' || f.status === 'approved').length,
-      gallons_owed_mgal: unallocated + available + reserved,
-      gallons_allocated_mgal: available + reserved,
-      open_exceptions: ctx.db.get("SELECT COUNT(*) AS n FROM exceptions WHERE status IN ('open','proposed')").n,
       bank_verified_minor: -ctx.ledger.balance(acct.bankVerified),
-      revenue_minor: ctx.ledger.balance(acct.fuelRevenue),
-      breakage_minor: ctx.ledger.balance(acct.breakage),
+      prepaid_owed_minor: unallocated + available + reserved,
+      allocated_minor: available + reserved,
+      redeemed_minor: sumAccounts(ctx, 'stn:%:clearing'),
+      expired_minor: sumAccounts(ctx, 'co:%:expired'),
+      open_exceptions: ctx.db.get("SELECT COUNT(*) AS n FROM exceptions WHERE status IN ('open','proposed')").n,
       refunds_payable_minor: ctx.ledger.balance(acct.refundsPayable),
       unmatched_bank_lines: ctx.db.get("SELECT COUNT(*) AS n FROM bank_transactions WHERE status = 'unmatched'").n,
       refunds_pending: ctx.db.get("SELECT COUNT(*) AS n FROM refunds WHERE status IN ('requested','approved')").n,
     },
     funding_queue: funding.slice(0, 12),
-    redemptions_today: redemptionsToday,
+    sales_today: salesToday,
     companies,
     alerts: listExceptions(ctx, actor, 'open').slice(0, 5),
     balance_rule: ctx.ledger.checkBalanceRule(),
@@ -67,22 +74,25 @@ export function companyDashboard(ctx: Ctx, actor: Actor, companyId: number) {
   const recurring = listRecurring(ctx, actor, companyId);
   const lots = ctx.db.all('SELECT * FROM lots WHERE company_id = ? ORDER BY expires_on, id', companyId).map((l) => ({
     ...l,
-    unallocated_mgal: ctx.ledger.balance(acct.unallocated(companyId), l.id),
-    redeemed_mgal: ctx.db.get(
+    unallocated_minor: ctx.ledger.balance(acct.unallocated(companyId), l.id),
+    redeemed_minor: Number(ctx.db.get(
       `SELECT COALESCE(SUM(credit - debit), 0) AS b FROM journal_lines WHERE lot_id = ? AND account LIKE 'stn:%:clearing'`, l.id,
-    ).b,
+    ).b),
   }));
+  const unallocated = sumAccounts(ctx, acct.unallocated(companyId), companyId);
+  const contracts = contractsOf(ctx, companyId);
   return {
     company,
-    contracts: ctx.db.all('SELECT * FROM contracts WHERE company_id = ? AND active = 1 ORDER BY grade', companyId),
+    contracts,
     kpis: {
-      unallocated_mgal: sumGallons(ctx, acct.unallocated(companyId), companyId),
-      unallocated_by_grade: ctx.ledger.byGrade(acct.unallocated(companyId), true),
-      allocated_mgal: sumGallons(ctx, 'emp:%:available', companyId) + sumGallons(ctx, 'emp:%:reserved', companyId),
-      redeemed_mgal: sumGallons(ctx, 'stn:%:clearing', companyId),
-      batch_ready_mgal: batches.filter((b) => b.status === 'draft' || b.status === 'pending_approval').reduce((s, b) => s + b.ready_mgal, 0),
+      unallocated_minor: unallocated,
+      spendable_unallocated_minor: ctx.ledger.spendable(acct.unallocated(companyId)),
+      unallocated_gallons_ref: gallonsReference(contracts, unallocated),
+      allocated_minor: sumAccounts(ctx, 'emp:%:available', companyId) + sumAccounts(ctx, 'emp:%:reserved', companyId),
+      redeemed_minor: sumAccounts(ctx, 'stn:%:clearing', companyId),
+      redeemed_mgal: Number(ctx.db.get("SELECT COALESCE(SUM(dispensed_mgal), 0) AS m FROM redemptions WHERE company_id = ? AND status = 'completed'", companyId).m),
+      batch_ready_minor: batches.filter((b) => b.status === 'draft' || b.status === 'pending_approval').reduce((s, b) => s + b.ready_minor, 0),
       recurring: recurring.find((r) => r.status !== 'cancelled') ?? null,
-      liability_minor: ctx.ledger.balance(acct.prepaidLiability(companyId)),
     },
     batches,
     recurring,
@@ -98,17 +108,17 @@ export function wallet(ctx: Ctx, actor: Actor) {
     actor.employeeId,
   );
   const lots = ctx.ledger.lotBalances(acct.available(emp.id));
-  const byGrade: Record<string, number> = {};
-  for (const l of lots) if (l.status === 'active') byGrade[l.grade] = (byGrade[l.grade] ?? 0) + l.balance;
-  const programGrades = ctx.db.all('SELECT grade FROM contracts WHERE company_id = ? AND active = 1', emp.company_id).map((r) => r.grade);
+  const available = lots.filter((l) => l.status === 'active').reduce((s, l) => s + l.balance, 0);
+  const contracts = contractsOf(ctx, emp.company_id);
   return {
     employee: { id: emp.id, name: emp.name, status: emp.status, company_name: emp.company_name, company_status: emp.company_status, has_pin: !!emp.pin_hash },
-    available_mgal: Object.values(byGrade).reduce((s, v) => s + v, 0),
-    by_grade: byGrade,
-    program_grades: programGrades,
-    reserved_mgal: ctx.ledger.balance(acct.reserved(emp.id)),
+    currency: lots[0]?.currency ?? contracts[0]?.currency ?? 'HTG',
+    available_minor: available,
+    reserved_minor: ctx.ledger.balance(acct.reserved(emp.id)),
+    prices: contracts,
+    gallons_ref: gallonsReference(contracts, available),
     next_expiry: lots.find((l) => l.status === 'active')?.expires_on ?? null,
-    lots: lots.map((l) => ({ code: l.code, grade: l.grade, balance: l.balance, expires_on: l.expires_on, status: l.status })),
+    lots: lots.map((l) => ({ code: l.code, balance: l.balance, currency: l.currency, expires_on: l.expires_on, status: l.status })),
     history: listRedemptions(ctx, { employeeId: emp.id, limit: 30 }),
     disputes: listExceptions(ctx, actor),
   };
@@ -135,13 +145,11 @@ export function journal(ctx: Ctx, actor: Actor, companyId?: number) {
 }
 
 const ACCOUNT_NAMES: Record<string, string> = {
-  issued: 'issued gallons', unallocated: 'unallocated gallons', available: 'available gallons', reserved: 'reserved gallons',
-  clearing: 'station clearing', expired: 'expired gallons', refunded: 'refunded gallons', adjustment: 'adjustments',
-  prepaid_liability: 'prepaid liability', bank_verified: 'verified bank funds', fuel_revenue: 'fuel revenue',
-  breakage: 'breakage', refunds_payable: 'refunds payable',
+  unallocated: 'unallocated', available: 'available', reserved: 'reserved', clearing: 'fuel sales',
+  expired: 'expired', bank_verified: 'verified bank funds', refunds_payable: 'refunds payable',
 };
 
-/** Turns account keys like `emp:3:available` into "Paul D. · available gallons". */
+/** Turns account keys like `emp:3:available` into "Paul D. · available". */
 export function accountLabeler(ctx: Ctx) {
   const names = {
     co: new Map(ctx.db.all('SELECT id, name FROM companies').map((r) => [String(r.id), r.name])),

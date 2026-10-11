@@ -1,34 +1,31 @@
 import type { Db } from './db.js';
 import { AppError, badRequest } from './errors.js';
 
-export const GAL = 'mgal';
-
-/** Chart of accounts. Gallon accounts are tracked per fuel lot so every gallon traces to cleared funds. */
+/**
+ * Chart of accounts. Every amount is money in minor units (HTG cents). Each line carries the lot it
+ * belongs to, so every gourde traces back to one cleared bank deposit. Gallons are reference data
+ * kept on redemptions, never a ledger unit.
+ */
 export const acct = {
-  // gallons
-  issued: (companyId: number) => `co:${companyId}:issued`,
+  /** Distributor's bank. Debited per lot when a deposit is activated, credited when a refund is paid out. */
+  bankVerified: 'dist:bank_verified',
+  refundsPayable: 'dist:refunds_payable',
   unallocated: (companyId: number) => `co:${companyId}:unallocated`,
+  expired: (companyId: number) => `co:${companyId}:expired`,
   available: (employeeId: number) => `emp:${employeeId}:available`,
   reserved: (employeeId: number) => `emp:${employeeId}:reserved`,
+  /** Fuel sales confirmed at a station (value redeemed). */
   clearing: (stationId: number) => `stn:${stationId}:clearing`,
-  expired: (companyId: number) => `co:${companyId}:expired`,
-  refunded: (companyId: number) => `co:${companyId}:refunded`,
-  adjustment: (companyId: number) => `co:${companyId}:adjustment`,
-  // money
-  bankVerified: 'dist:bank_verified',
-  prepaidLiability: (companyId: number) => `co:${companyId}:prepaid_liability`,
-  fuelRevenue: 'dist:fuel_revenue',
-  breakage: 'dist:breakage',
-  refundsPayable: 'dist:refunds_payable',
 };
 
-/** Accounts that hold gallons and must never go negative at the lot level. */
-const NON_NEGATIVE = /^(co:\d+:unallocated|emp:\d+:(available|reserved)|stn:\d+:clearing)$/;
+/** Accounts holding value that must never go negative at the lot level. */
+const NON_NEGATIVE = /^(co:\d+:unallocated|emp:\d+:(available|reserved)|stn:\d+:clearing|dist:refunds_payable)$/;
 
 export interface Line {
   account: string;
+  /** Currency code of the amount, e.g. HTG. */
   unit: string;
-  lotId?: number | null;
+  lotId: number;
   debit?: number;
   credit?: number;
 }
@@ -47,7 +44,7 @@ export interface EntryInput {
 export class Ledger {
   constructor(private db: Db) {}
 
-  /** Posts a balanced journal entry. Debits must equal credits for every unit. */
+  /** Posts a journal entry. Debits must equal credits for every currency and every lot. */
   post(input: EntryInput): number {
     const lines = input.lines.filter((l) => (l.debit ?? 0) + (l.credit ?? 0) > 0);
     if (lines.length < 2) throw badRequest('empty_entry', 'Journal entry needs at least two non-zero lines');
@@ -55,13 +52,14 @@ export class Ledger {
     for (const l of lines) {
       const d = l.debit ?? 0;
       const c = l.credit ?? 0;
-      if (!Number.isInteger(d) || !Number.isInteger(c) || d < 0 || c < 0 || (d > 0 && c > 0)) {
+      if (!Number.isInteger(d) || !Number.isInteger(c) || d < 0 || c < 0 || (d > 0 && c > 0) || !l.lotId) {
         throw badRequest('bad_line', `Invalid journal line on ${l.account}`);
       }
-      totals.set(l.unit, (totals.get(l.unit) ?? 0) + d - c);
+      const key = `${l.unit}:${l.lotId}`;
+      totals.set(key, (totals.get(key) ?? 0) + d - c);
     }
-    for (const [unit, diff] of totals) {
-      if (diff !== 0) throw badRequest('unbalanced', `Entry is unbalanced in ${unit} by ${diff}`);
+    for (const [key, diff] of totals) {
+      if (diff !== 0) throw badRequest('unbalanced', `Entry is unbalanced for ${key} by ${diff}`);
     }
 
     return this.db.tx(() => {
@@ -74,13 +72,13 @@ export class Ledger {
       for (const l of lines) {
         this.db.run(
           'INSERT INTO journal_lines (entry_id, account, unit, lot_id, debit, credit) VALUES (?,?,?,?,?,?)',
-          entryId, l.account, l.unit, l.lotId ?? null, l.debit ?? 0, l.credit ?? 0,
+          entryId, l.account, l.unit, l.lotId, l.debit ?? 0, l.credit ?? 0,
         );
       }
       for (const l of lines) {
-        if (l.unit !== GAL || !NON_NEGATIVE.test(l.account)) continue;
-        if (this.balance(l.account, l.lotId ?? undefined) < 0) {
-          throw new AppError(409, 'insufficient_balance', `Insufficient gallons in ${l.account}`);
+        if (!NON_NEGATIVE.test(l.account)) continue;
+        if (this.balance(l.account, l.lotId) < 0) {
+          throw new AppError(409, 'insufficient_balance', `Insufficient balance in ${l.account}`);
         }
       }
       return entryId;
@@ -104,7 +102,7 @@ export class Ledger {
     });
   }
 
-  /** Balance as credits minus debits (positive = holding). Optionally restricted to one lot. */
+  /** Balance as credits minus debits (positive = holding value). Optionally restricted to one lot. */
   balance(account: string, lotId?: number): number {
     const row =
       lotId === undefined
@@ -116,70 +114,65 @@ export class Ledger {
     return Number(row?.b ?? 0);
   }
 
-  /** Positive per-lot balances of a gallon account, earliest expiry first (FIFO consumption order). */
-  lotBalances(account: string, opts: { grade?: string; activeOnly?: boolean } = {}) {
-    const rows = this.db.all<{ lot_id: number; balance: number; grade: string; expires_on: string; status: string; price_minor: number; currency: string; code: string }>(
-      `SELECT jl.lot_id, SUM(jl.credit - jl.debit) AS balance,
-              l.grade, l.expires_on, l.status, l.price_minor, l.currency, l.code
+  /** Positive per-lot balances of an account, earliest expiry first (FIFO consumption order). */
+  lotBalances(account: string, opts: { activeOnly?: boolean } = {}) {
+    const rows = this.db.all<{ lot_id: number; balance: number; expires_on: string; status: string; currency: string; code: string }>(
+      `SELECT jl.lot_id, SUM(jl.credit - jl.debit) AS balance, l.expires_on, l.status, l.currency, l.code
          FROM journal_lines jl JOIN lots l ON l.id = jl.lot_id
-        WHERE jl.account = ? AND jl.unit = '${GAL}'
+        WHERE jl.account = ?
         GROUP BY jl.lot_id
        HAVING balance > 0
         ORDER BY l.expires_on, l.id`,
       account,
     );
-    return rows
-      .map((r) => ({ ...r, balance: Number(r.balance) }))
-      .filter((r) => (!opts.grade || r.grade === opts.grade) && (!opts.activeOnly || r.status === 'active'));
+    return rows.map((r) => ({ ...r, balance: Number(r.balance) })).filter((r) => !opts.activeOnly || r.status === 'active');
   }
 
-  /** Gallon balance of an account broken down by grade. */
-  byGrade(account: string, activeOnly = false): Record<string, number> {
-    const out: Record<string, number> = {};
-    for (const r of this.lotBalances(account, { activeOnly })) out[r.grade] = (out[r.grade] ?? 0) + r.balance;
-    return out;
+  /** Spendable balance: positive balances on active (not frozen, not expired) lots. */
+  spendable(account: string): number {
+    return this.lotBalances(account, { activeOnly: true }).reduce((s, l) => s + l.balance, 0);
   }
 
-  /**
-   * Picks quantities from lots FIFO to cover `mgal` of `grade` held in `account`.
-   * Throws if the active balance is insufficient.
-   */
-  pickFifo(account: string, grade: string, mgal: number) {
-    const picks: { lotId: number; mgal: number; priceMinor: number; currency: string }[] = [];
-    let remaining = mgal;
-    for (const lot of this.lotBalances(account, { grade, activeOnly: true })) {
+  /** Picks amounts from lots FIFO (earliest expiry first) to cover `amount` held in `account`. */
+  pickFifo(account: string, amount: number) {
+    const picks: { lotId: number; amount: number; currency: string }[] = [];
+    let remaining = amount;
+    for (const lot of this.lotBalances(account, { activeOnly: true })) {
       if (remaining <= 0) break;
       const take = Math.min(lot.balance, remaining);
-      picks.push({ lotId: lot.lot_id, mgal: take, priceMinor: lot.price_minor, currency: lot.currency });
+      picks.push({ lotId: lot.lot_id, amount: take, currency: lot.currency });
       remaining -= take;
     }
-    if (remaining > 0) throw new AppError(409, 'insufficient_balance', `Insufficient ${grade} gallons`);
+    if (remaining > 0) throw new AppError(409, 'insufficient_balance', 'Insufficient balance');
     return picks;
   }
 
   /**
-   * Daily balance rule, per company and per lot:
+   * Daily balance rule, per lot:
    * funded = unallocated + employee available + reserved + redeemed + expired + refunded + adjustments.
-   * With double entry this holds iff every lot's gallon lines sum to zero.
+   * Every entry balances per lot, so each lot's lines must net to zero, and the funding debit to the
+   * bank must equal the lot's cleared amount.
    */
   checkBalanceRule() {
-    const lots = this.db.all<{ lot_id: number; code: string; company_id: number; funded: number; net: number }>(
-      `SELECT l.id AS lot_id, l.code, l.company_id, l.gallons_mgal AS funded,
-              COALESCE(SUM(jl.credit - jl.debit), 0) AS net
-         FROM lots l LEFT JOIN journal_lines jl ON jl.lot_id = l.id AND jl.unit = '${GAL}'
+    const lots = this.db.all<{ lot_id: number; code: string; amount: number; net: number; funded: number }>(
+      `SELECT l.id AS lot_id, l.code, l.amount_minor AS amount,
+              COALESCE(SUM(jl.credit - jl.debit), 0) AS net,
+              COALESCE(SUM(CASE WHEN je.kind = 'funding_activated' AND jl.account = '${acct.bankVerified}' THEN jl.debit END), 0) AS funded
+         FROM lots l
+         LEFT JOIN journal_lines jl ON jl.lot_id = l.id
+         LEFT JOIN journal_entries je ON je.id = jl.entry_id
         GROUP BY l.id`,
     );
-    const issues = [];
+    const issues: { lot?: string; entry?: number; problem: string }[] = [];
     for (const lot of lots) {
-      const issued = -this.balance(acct.issued(lot.company_id), lot.lot_id);
       if (Number(lot.net) !== 0) issues.push({ lot: lot.code, problem: `lot lines net ${lot.net}, expected 0` });
-      if (issued !== Number(lot.funded)) issues.push({ lot: lot.code, problem: `issued ${issued} != funded ${lot.funded}` });
+      if (Number(lot.funded) !== Number(lot.amount)) issues.push({ lot: lot.code, problem: `funded ${lot.funded} != cleared ${lot.amount}` });
     }
     const unbalanced = this.db.all(
-      `SELECT entry_id, unit, SUM(debit) - SUM(credit) AS diff FROM journal_lines
-        GROUP BY entry_id, unit HAVING diff != 0`,
+      `SELECT entry_id, unit, lot_id, SUM(debit) - SUM(credit) AS diff FROM journal_lines
+        GROUP BY entry_id, unit, lot_id HAVING diff != 0`,
     );
-    for (const u of unbalanced) issues.push({ entry: u.entry_id, problem: `unbalanced ${u.unit} by ${u.diff}` });
+    for (const u of unbalanced) issues.push({ entry: u.entry_id, problem: `unbalanced ${u.unit} lot ${u.lot_id} by ${u.diff}` });
     return { ok: issues.length === 0, lotsChecked: lots.length, issues };
   }
 }
