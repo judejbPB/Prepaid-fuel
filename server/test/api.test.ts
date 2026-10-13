@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createCtx } from '../src/context.js';
 import { DEMO_PASSWORD, DEMO_PIN, seedDemo } from '../src/demo.js';
+import { SimulatedPhone } from '../src/phone-sim.js';
 
 const ctx = createCtx(':memory:');
 const app = buildApp(ctx);
@@ -65,10 +66,21 @@ describe('api', () => {
     expect((await call('POST', '/api/auth/login', { body: { login: '50937000001', password: DEMO_PASSWORD }, headers: { 'x-device-id': 'phone-2' } })).status).toBe(403);
 
     const before = (await call('GET', '/api/wallet', { token: emp })).json;
-    const preview = await call('POST', '/api/wallet/preview', { token: emp, body: { code: req.qr } });
-    expect(preview.json).toMatchObject({ pump: 3, grade: 'diesel', gallons_mgal: 12000, amount_minor: 798000 });
-    const approved = await call('POST', '/api/wallet/approve', { token: emp, body: { code: req.qr, pin: DEMO_PIN } });
-    expect(approved.json.status).toBe('approved');
+    expect(before.device).toMatchObject({ enrolled: false });
+
+    // Enrollment happens once, online. Afterwards the phone can approve with no connection at all.
+    const handset = new SimulatedPhone();
+    expect((await call('POST', '/api/wallet/enroll', { token: emp, body: { password: 'wrong', ...handset.enrollment(DEMO_PIN) } })).status).toBe(403);
+    const enrolled = await call('POST', '/api/wallet/enroll', { token: emp, body: { password: DEMO_PASSWORD, ...handset.enrollment(DEMO_PIN) } });
+    handset.enrolled(enrolled.json);
+    expect((await call('GET', '/api/wallet', { token: emp })).json.device).toMatchObject({ enrolled: true, on_this_phone: true });
+
+    const priceOf = () => 66500;
+    const code = handset.approve(req.challenge, DEMO_PIN, priceOf);
+    // The employee's token cannot submit approvals; only the station terminal can.
+    expect((await call('POST', `/api/redemptions/${req.id}/authorize`, { token: emp, body: { token: code } })).status).toBe(403);
+    const approved = await call('POST', `/api/redemptions/${req.id}/authorize`, { token: att, body: { token: code } });
+    expect(approved.json).toMatchObject({ status: 'approved', approved_minor: 798000, employee_name: 'Jean P.' });
     const done = await call('POST', `/api/redemptions/${req.id}/complete`, { token: att, body: { gallons: 12 } });
     expect(done.json.status).toBe('completed');
     const after = (await call('GET', '/api/wallet', { token: emp })).json;

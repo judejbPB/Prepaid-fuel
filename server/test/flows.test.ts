@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { actorFor, hashSecret, type Actor } from '../src/auth.js';
+import { actorFor, type Actor } from '../src/auth.js';
 import { createCtx, type Ctx } from '../src/context.js';
 import { acct } from '../src/ledger.js';
 import * as admin from '../src/services/admin.js';
@@ -9,6 +9,8 @@ import * as exc from '../src/services/exceptions.js';
 import * as funding from '../src/services/funding.js';
 import * as red from '../src/services/redemption.js';
 import * as refunds from '../src/services/refunds.js';
+import { decodeResponse, encodeResponse } from '../src/offline.js';
+import { SimulatedPhone } from '../src/phone-sim.js';
 
 const PIN = '4321';
 const HTG = (n: number) => Math.round(n * 100);
@@ -35,8 +37,14 @@ function setup() {
   const manager = as(mk('Mgr', 'st_manager', { stationId: station.id }));
 
   const emp = admin.createEmployee(ctx, null, { companyId: company.id, name: 'Jean', phone: '50930000001', password: 'password1' });
-  ctx.db.run('UPDATE employees SET pin_hash = ? WHERE id = ?', hashSecret(PIN), emp.id);
-  const employee = as({ id: emp.user_id });
+  const employee = as({ id: emp.user_id }, { deviceId: 'phone-1' });
+  const phone = new SimulatedPhone();
+  phone.enroll(ctx, employee, 'password1', PIN);
+  const price = (grade: string) =>
+    ctx.db.get('SELECT price_minor FROM contracts WHERE company_id = ? AND grade = ? AND active = 1', company.id, grade).price_minor;
+  /** The employee's (offline) phone answers the terminal's challenge; the terminal submits it. */
+  const approve = (r: any, pin = PIN, p: SimulatedPhone = phone) =>
+    red.authorizeRequest(ctx, attendant, r.id, p.approve(red.getRedemption(ctx, r.id).challenge!, pin, price));
 
   const fundAndActivate = (htg: number) => {
     const f = funding.createFunding(ctx, preparer, { companyId: company.id, amountMinor: HTG(htg) });
@@ -49,10 +57,10 @@ function setup() {
   };
   const fuel = (qty: red.Quantity, dispensed: red.Quantity = qty, grade = 'diesel') => {
     const r = red.createRequest(ctx, attendant, { grade, pump: 3, ...qty });
-    red.approveRequest(ctx, employee, { code: red.qrPayload(r.code), pin: PIN });
+    approve(r);
     return red.completeRequest(ctx, attendant, r.id, dispensed);
   };
-  return { ctx, company, station, terminal, treasury, approver, approver2, distAdmin, preparer, coApprover, attendant, manager, emp, employee, fundAndActivate, allocate, fuel };
+  return { ctx, company, station, terminal, treasury, approver, approver2, distAdmin, preparer, coApprover, attendant, manager, emp, employee, phone, price, approve, fundAndActivate, allocate, fuel };
 }
 
 let t: ReturnType<typeof setup>;
@@ -175,10 +183,10 @@ describe('redeem', () => {
 
   it('prices a gallon request at the contract price and charges only after confirmation', () => {
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 3, gallons: 12 });
-    const preview = red.previewRequest(ctx, t.employee, red.qrPayload(r.code));
-    expect(preview).toMatchObject({ station_name: 'Station X', pump: 3, grade: 'diesel', amount_minor: HTG(6000), gallons_mgal: 12_000, price_minor: HTG(500) });
-
-    red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN });
+    expect(r.challenge).toMatch(/^BSL1C\./);
+    const approved = t.approve(r);
+    expect(approved).toMatchObject({ status: 'approved', approved_minor: HTG(6000), approved_mgal: 12_000, price_minor: HTG(500), employee_name: 'Jean' });
+    expect(approved.challenge).toBeNull();
     expect(bal(acct.available(t.emp.id))).toBe(HTG(44_000));
     expect(bal(acct.reserved(t.emp.id))).toBe(HTG(6000));
     expect(bal(acct.clearing(t.station.id))).toBe(0);
@@ -199,9 +207,16 @@ describe('redeem', () => {
 
   it('locks the price at approval even if the contract changes before dispensing', () => {
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 10 });
-    red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN });
+    t.approve(r);
     admin.setContractPrice(ctx, null, { companyId: t.company.id, grade: 'diesel', priceMinor: HTG(600) });
     expect(red.completeRequest(ctx, t.attendant, r.id, { gallons: 10 }).charged_minor).toBe(HTG(5000));
+  });
+
+  it('rejects an approval if the price rose after the phone last synced', () => {
+    const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 10 });
+    const stale = t.phone.approve(r.challenge!, PIN, () => HTG(500)); // phone saw 500/gal
+    admin.setContractPrice(ctx, null, { companyId: t.company.id, grade: 'diesel', priceMinor: HTG(550) });
+    expect(() => red.authorizeRequest(ctx, t.attendant, r.id, stale)).toThrow(/price changed/);
   });
 
   it('only sells diesel and gasoline', () => {
@@ -209,29 +224,27 @@ describe('redeem', () => {
     expect(() => red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5, amount: 100 })).toThrow(/either/);
   });
 
-  it('QR codes are single use', () => {
-    const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5 });
-    red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN });
-    expect(() => red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN })).toThrow(/approved/);
-  });
-
   it('expired requests cannot be approved', () => {
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5 });
+    const code = t.phone.approve(r.challenge!, PIN, t.price); // scanned in time...
     ctx.db.run("UPDATE redemptions SET expires_at = datetime('now', '-1 minute') WHERE id = ?", r.id);
-    expect(() => red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN })).toThrow(/expired/);
+    expect(() => red.authorizeRequest(ctx, t.attendant, r.id, code)).toThrow(/expired/); // ...presented too late
   });
 
-  it('locks the wallet after repeated wrong PINs', () => {
+  it('locks the wallet after repeated wrong PINs; recovery revokes the phone key', () => {
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5 });
-    for (let i = 0; i < 5; i++) expect(() => red.approveRequest(ctx, t.employee, { code: r.code, pin: '0000' })).toThrow(/PIN|locked/);
-    expect(() => red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN })).toThrow(/Too many wrong PINs/);
+    for (let i = 0; i < 5; i++) expect(() => t.approve(r, '0000')).toThrow(/PIN/);
+    expect(() => t.approve(r)).toThrow(/locked/);
     admin.recoverEmployee(ctx, t.coApprover, t.emp.id, { resetPin: true, resetDevice: false });
-    expect(ctx.db.get('SELECT pin_hash FROM employees WHERE id = ?', t.emp.id).pin_hash).toBeNull();
+    expect(() => t.approve(r)).toThrow(/registered phone/); // old key revoked
+    const newPhone = new SimulatedPhone();
+    newPhone.enroll(ctx, t.employee, 'password1', '9999');
+    expect(t.approve(r, '9999', newPhone).status).toBe('approved');
   });
 
   it('cancelling an approved request releases the reservation', () => {
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 30 });
-    red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN });
+    t.approve(r);
     red.cancelRequest(ctx, t.attendant, r.id);
     expect(bal(acct.available(t.emp.id))).toBe(HTG(50_000));
     expect(bal(acct.reserved(t.emp.id))).toBe(0);
@@ -239,17 +252,17 @@ describe('redeem', () => {
 
   it('cannot charge more than approved or spend beyond the balance', () => {
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 10 });
-    red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN });
+    t.approve(r);
     expect(() => red.completeRequest(ctx, t.attendant, r.id, { gallons: 10.5 })).toThrow(/more than/);
     expect(() => red.completeRequest(ctx, t.attendant, r.id, { amount: 5000.01 })).toThrow(/more than/);
     const big = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, amount: 45_000.01 });
-    expect(() => red.approveRequest(ctx, t.employee, { code: big.code, pin: PIN })).toThrow(/Insufficient/);
+    expect(() => t.approve(big)).toThrow(/Insufficient/);
   });
 
   it('honours freezes', () => {
     admin.setFrozen(ctx, t.approver, 'employee', t.emp.id, true);
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5 });
-    expect(() => red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN })).toThrow(/frozen/);
+    expect(() => t.approve(r)).toThrow(/frozen/);
     admin.setFrozen(ctx, t.approver, 'employee', t.emp.id, false);
     admin.setFrozen(ctx, t.approver, 'terminal', t.terminal.id, true);
     expect(() => red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5 })).toThrow(/frozen/);
@@ -258,7 +271,77 @@ describe('redeem', () => {
   it('frozen lots are skipped', () => {
     admin.setFrozen(ctx, t.approver, 'lot', ctx.db.get('SELECT id FROM lots').id, true);
     const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5 });
-    expect(() => red.approveRequest(ctx, t.employee, { code: r.code, pin: PIN })).toThrow(/Insufficient/);
+    expect(() => t.approve(r)).toThrow(/Insufficient/);
+  });
+});
+
+describe('screenshot and replay fraud', () => {
+  beforeEach(() => {
+    t.fundAndActivate(100_000);
+    t.allocate(50_000);
+    red.openShift(ctx, t.attendant);
+  });
+  const newRequest = () => red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, gallons: 5 });
+
+  it('an approval code works once only', () => {
+    const r = newRequest();
+    const code = t.phone.approve(r.challenge!, PIN, t.price);
+    red.authorizeRequest(ctx, t.attendant, r.id, code);
+    expect(() => red.authorizeRequest(ctx, t.attendant, r.id, code)).toThrow(/approved/);
+  });
+
+  it('a screenshot of an approval code is useless for any other request', () => {
+    const r1 = newRequest();
+    const code = t.phone.approve(r1.challenge!, PIN, t.price);
+    const r2 = newRequest();
+    expect(() => red.authorizeRequest(ctx, t.attendant, r2.id, code)).toThrow(/different request/);
+  });
+
+  it('a replayed counter is refused even with a fresh challenge', () => {
+    const r1 = newRequest();
+    red.authorizeRequest(ctx, t.attendant, r1.id, t.phone.approve(r1.challenge!, PIN, t.price, { counter: 7 }));
+    const r2 = newRequest();
+    expect(() => red.authorizeRequest(ctx, t.attendant, r2.id, t.phone.approve(r2.challenge!, PIN, t.price, { counter: 7 }))).toThrow(/already used/);
+  });
+
+  it('a screenshot of the station QR goes stale after the challenge rotates twice', () => {
+    const r = newRequest();
+    const photographed = r.challenge!;
+    const age = () => ctx.db.run("UPDATE redemptions SET nonce_at = datetime('now', '-31 seconds') WHERE id = ?", r.id);
+    age();
+    red.refreshChallenge(ctx, t.attendant, r.id); // previous challenge still accepted for one period
+    const graceCode = t.phone.approve(photographed, PIN, t.price);
+    age();
+    red.refreshChallenge(ctx, t.attendant, r.id);
+    expect(() => red.authorizeRequest(ctx, t.attendant, r.id, graceCode)).toThrow(/too old/);
+    expect(t.approve(r).status).toBe('approved'); // the live QR still works
+  });
+
+  it('the previous challenge is accepted within the grace period', () => {
+    const r = newRequest();
+    ctx.db.run("UPDATE redemptions SET nonce_at = datetime('now', '-31 seconds') WHERE id = ?", r.id);
+    red.refreshChallenge(ctx, t.attendant, r.id);
+    expect(red.authorizeRequest(ctx, t.attendant, r.id, t.phone.approve(r.challenge!, PIN, t.price)).status).toBe('approved');
+  });
+
+  it('a tampered amount breaks the signature', () => {
+    const r = red.createRequest(ctx, t.attendant, { grade: 'diesel', pump: 1, amount: 2000 });
+    const tok = decodeResponse(t.phone.approve(r.challenge!, PIN, t.price));
+    expect(() => red.authorizeRequest(ctx, t.attendant, r.id, encodeResponse({ ...tok, m: tok.m * 10 }))).toThrow(/registered phone/);
+  });
+
+  it('a phone that is not the enrolled one cannot approve, even with the right PIN', () => {
+    const r = newRequest();
+    const clone = new SimulatedPhone();
+    clone.employeeId = t.phone.employeeId;
+    clone.keyId = t.phone.keyId;
+    expect(() => red.authorizeRequest(ctx, t.attendant, r.id, clone.approve(r.challenge!, PIN, t.price))).toThrow(/registered phone/);
+  });
+
+  it('a stolen phone is useless without the PIN, and only one phone can be enrolled', () => {
+    const r = newRequest();
+    expect(() => t.approve(r, '1111')).toThrow(/Wrong PIN/);
+    expect(() => new SimulatedPhone().enroll(ctx, t.employee, 'password1', '1111')).toThrow(/already enrolled/);
   });
 });
 

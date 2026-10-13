@@ -2,6 +2,7 @@ import { COMPANY, DISTRIBUTOR, hashSecret, randomToken, requireCompany, requireR
 import type { Ctx } from '../context.js';
 import { badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { acct, type Line } from '../ledger.js';
+import { PIN_KDF, validatePublicJwk } from '../offline.js';
 import { GRADES, toMinor, today } from '../units.js';
 
 // ---------------------------------------------------------------------------
@@ -129,7 +130,7 @@ export function listEmployees(ctx: Ctx, actor: Actor, companyId: number) {
   requireCompany(actor, companyId);
   return ctx.db
     .all(
-      `SELECT e.id, e.name, e.dept, e.phone, e.status, e.pin_hash IS NOT NULL AS has_pin,
+      `SELECT e.id, e.name, e.dept, e.phone, e.status, EXISTS (SELECT 1 FROM employee_devices d WHERE d.employee_id = e.id AND d.status = 'active') AS has_pin,
               e.pin_locked_until > datetime('now') AS pin_locked, e.bound_device_id IS NOT NULL AS device_bound,
               (SELECT COUNT(*) FROM employees e2 WHERE e2.company_id = e.company_id AND e2.phone = e.phone AND e2.status != 'inactive') > 1 AS duplicate_phone
          FROM employees e WHERE e.company_id = ? ORDER BY e.name`,
@@ -142,21 +143,41 @@ export function listEmployees(ctx: Ctx, actor: Actor, companyId: number) {
     }));
 }
 
-/** Employee sets their PIN (first use or after assisted reset). Requires the account password. */
-export function setPin(ctx: Ctx, actor: Actor, input: { password: string; pin: string }) {
+/**
+ * Enrolls the employee's phone as their wallet device (first use or after assisted recovery). Must be
+ * done online, with the account password. The phone generates a non-extractable signing key and sends
+ * only its public half, plus pinKey = PBKDF2(PIN) so the server can check PIN proofs in offline codes.
+ */
+export function enrollDevice(
+  ctx: Ctx, actor: Actor, input: { password: string; publicKeyJwk: unknown; pinKey: string },
+) {
   requireRole(actor, ['employee']);
-  if (!/^\d{4,6}$/.test(input.pin)) throw badRequest('bad_pin', 'PIN must be 4–6 digits');
   const user = ctx.db.get('SELECT password_hash FROM users WHERE id = ?', actor.userId);
   if (!verifySecret(input.password, user.password_hash)) throw forbidden('Password is incorrect');
+  const jwk = validatePublicJwk(input.publicKeyJwk);
+  const pinKey = Buffer.from(input.pinKey, 'base64');
+  if (pinKey.length !== PIN_KDF.bytes) throw badRequest('bad_pin_key', 'Invalid PIN key');
   const emp = ctx.db.get('SELECT * FROM employees WHERE id = ?', actor.employeeId);
-  if (emp.pin_hash) throw conflict('pin_set', 'PIN already set. Ask your company admin to reset it.');
-  ctx.db.run('UPDATE employees SET pin_hash = ?, pin_failures = 0, pin_locked_until = NULL WHERE id = ?', hashSecret(input.pin), emp.id);
-  ctx.db.audit(actor.userId, 'pin.set', 'employee', emp.id);
-  return { ok: true };
+  if (!actor.deviceId || (emp.bound_device_id && emp.bound_device_id !== actor.deviceId)) {
+    throw forbidden('Enroll from the phone this wallet is bound to');
+  }
+  return ctx.db.tx(() => {
+    if (ctx.db.get("SELECT 1 FROM employee_devices WHERE employee_id = ? AND status = 'active'", emp.id)) {
+      throw conflict('already_enrolled', 'A phone is already enrolled. Ask your company admin for assisted recovery.');
+    }
+    const id = ctx.db.run(
+      'INSERT INTO employee_devices (employee_id, device_id, public_key_jwk, pin_key) VALUES (?,?,?,?)',
+      emp.id, actor.deviceId, JSON.stringify(jwk), pinKey.toString('base64'),
+    ).id;
+    ctx.db.run('UPDATE employees SET pin_failures = 0, pin_locked_until = NULL WHERE id = ?', emp.id);
+    ctx.db.audit(actor.userId, 'device.enroll', 'employee', emp.id, { deviceKeyId: id });
+    return { deviceKeyId: id, employeeId: emp.id };
+  });
 }
 
 /**
- * Assisted recovery for lost phones and forgotten PINs: clears the device binding and/or PIN,
+ * Assisted recovery for lost phones and forgotten PINs: revokes the enrolled phone key, optionally unbinds
+ * the phone,
  * revokes the employee's sessions and optionally issues a temporary password.
  */
 export function recoverEmployee(
@@ -167,7 +188,13 @@ export function recoverEmployee(
   if (!emp) throw notFound('Employee');
   requireCompany(actor, emp.company_id);
   return ctx.db.tx(() => {
-    if (input.resetPin) ctx.db.run('UPDATE employees SET pin_hash = NULL, pin_failures = 0, pin_locked_until = NULL WHERE id = ?', emp.id);
+    // A new PIN or a new phone both mean a new device key, so the enrolled key is revoked either way.
+    if (input.resetPin || input.resetDevice) {
+      ctx.db.run(
+        "UPDATE employee_devices SET status = 'revoked', revoked_at = datetime('now') WHERE employee_id = ? AND status = 'active'", emp.id,
+      );
+      ctx.db.run('UPDATE employees SET pin_failures = 0, pin_locked_until = NULL WHERE id = ?', emp.id);
+    }
     if (input.resetDevice) ctx.db.run('UPDATE employees SET bound_device_id = NULL WHERE id = ?', emp.id);
     if (emp.user_id) {
       ctx.db.run('DELETE FROM sessions WHERE user_id = ?', emp.user_id);

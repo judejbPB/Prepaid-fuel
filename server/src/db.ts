@@ -69,6 +69,21 @@ CREATE TABLE IF NOT EXISTS employees (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','frozen','inactive'))
 );
 
+-- The phone that holds an employee's wallet. The private key never leaves the phone; pin_key is
+-- PBKDF2(PIN) and lets the server check the PIN proof inside offline approval codes.
+CREATE TABLE IF NOT EXISTS employee_devices (
+  id INTEGER PRIMARY KEY,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  device_id TEXT NOT NULL,
+  public_key_jwk TEXT NOT NULL,
+  pin_key TEXT NOT NULL,
+  last_counter INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  revoked_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_device ON employee_devices(employee_id) WHERE status = 'active';
+
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -258,6 +273,11 @@ CREATE TABLE IF NOT EXISTS redemptions (
     CHECK (status IN ('pending','approved','completed','cancelled','expired')),
   employee_id INTEGER REFERENCES employees(id),
   company_id INTEGER REFERENCES companies(id),
+  -- Rotating challenge shown in the terminal QR; the previous nonce stays valid for a short grace period.
+  challenge_nonce TEXT NOT NULL,
+  prev_nonce TEXT,
+  nonce_at TEXT NOT NULL DEFAULT (datetime('now')),
+  device_key_id INTEGER REFERENCES employee_devices(id),
   reserve_entry_id INTEGER REFERENCES journal_entries(id),
   confirm_entry_id INTEGER REFERENCES journal_entries(id),
   expires_at TEXT NOT NULL,

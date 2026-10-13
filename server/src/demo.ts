@@ -1,9 +1,10 @@
-import { actorFor, hashSecret, type Actor } from './auth.js';
+import { actorFor, type Actor } from './auth.js';
 import type { Ctx } from './context.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as funding from './services/funding.js';
 import * as red from './services/redemption.js';
+import { SimulatedPhone } from './phone-sim.js';
 
 export const DEMO_PASSWORD = 'demo1234';
 export const DEMO_PIN = '1234';
@@ -55,8 +56,6 @@ export function seedDemo(ctx: Ctx) {
     admin.createEmployee(ctx, null, { companyId: coA.id, name, dept, phone, password: DEMO_PASSWORD }));
   // A second roster record reusing Sophie's phone: allocation batches hold it for review.
   const dup = admin.createEmployee(ctx, null, { companyId: coA.id, name: 'S. Rousseau', dept: 'Finance', phone: '50937000004', password: DEMO_PASSWORD });
-  // Jean P. and Marie L. already have a PIN; everyone else sets theirs on first sign-in.
-  for (const e of employees.slice(0, 2)) db.run('UPDATE employees SET pin_hash = ? WHERE id = ?', hashSecret(DEMO_PIN), e.id);
 
   // Funding (HTG): Company A has two activated lots; B awaits the bank; C is matched and needs the second approver.
   const fund = (companyId: number, htg: number) =>
@@ -99,11 +98,20 @@ export function seedDemo(ctx: Ctx) {
   const fuelings: [number, string, red.Quantity][] = [
     [0, 'diesel', { gallons: 12 }], [1, 'gasoline', { amount: 5_000 }], [0, 'diesel', { gallons: 20 }],
   ];
+  // History is approved with simulated phones; those keys are then revoked so each demo employee
+  // enrolls their real browser on first sign-in (choosing PIN 1234 keeps the README instructions valid).
+  const phones = employees.slice(0, 2).map((e) => {
+    const phone = new SimulatedPhone();
+    phone.enroll(ctx, as(e.user_id, { deviceId: `seed-phone-${e.id}` }), DEMO_PASSWORD, DEMO_PIN);
+    return phone;
+  });
+  const price = (grade: string) => db.get('SELECT price_minor FROM contracts WHERE company_id = ? AND grade = ? AND active = 1', coA.id, grade).price_minor;
   for (const [i, [empIdx, grade, qty]] of fuelings.entries()) {
     const r = red.createRequest(ctx, att1, { grade, pump: i + 1, ...qty });
-    red.approveRequest(ctx, as(employees[empIdx].user_id), { code: r.code, pin: DEMO_PIN });
+    red.authorizeRequest(ctx, att1, r.id, phones[empIdx].approve(r.challenge!, DEMO_PIN, price));
     red.completeRequest(ctx, att1, r.id, qty);
   }
+  db.run("UPDATE employee_devices SET status = 'revoked', revoked_at = datetime('now')");
 
   return {
     password: DEMO_PASSWORD,

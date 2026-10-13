@@ -232,7 +232,7 @@ function Employees() {
                 <td><b>{e.name}</b></td><td>{e.dept}</td>
                 <td className="mono">{e.phone} {!!e.duplicate_phone && <span className="badge warn">Duplicate</span>}</td>
                 <td className="r num">{money(e.available_minor)}{e.reserved_minor > 0 && <div className="small muted">{money(e.reserved_minor)} reserved</div>}</td>
-                <td className="small">{e.has_pin ? 'PIN set' : 'No PIN'}{e.pin_locked ? ' · locked' : ''}{e.device_bound ? ' · phone bound' : ''}</td>
+                <td className="small">{e.has_pin ? 'Phone secured' : 'Not set up'}{e.pin_locked ? ' · locked' : ''}{e.device_bound ? ' · phone bound' : ''}</td>
                 <td><Status s={e.status} /></td>
                 <td className="r">{approver && <div className="row" style={{ justifyContent: 'flex-end' }}>
                   <button className="sm secondary" onClick={() => setRecovering(e)}>Recovery</button>

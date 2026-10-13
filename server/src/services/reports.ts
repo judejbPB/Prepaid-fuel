@@ -101,6 +101,12 @@ export function companyDashboard(ctx: Ctx, actor: Actor, companyId: number) {
   };
 }
 
+/** Whether this phone holds the employee's enrolled signing key (needed to approve fuelings offline). */
+function walletDevice(ctx: Ctx, employeeId: number, deviceId: string | null) {
+  const d = ctx.db.get("SELECT id, device_id FROM employee_devices WHERE employee_id = ? AND status = 'active'", employeeId);
+  return { enrolled: !!d, key_id: d && d.device_id === deviceId ? d.id : null, on_this_phone: !!d && d.device_id === deviceId };
+}
+
 export function wallet(ctx: Ctx, actor: Actor) {
   requireRole(actor, ['employee']);
   const emp = ctx.db.get(
@@ -111,7 +117,9 @@ export function wallet(ctx: Ctx, actor: Actor) {
   const available = lots.filter((l) => l.status === 'active').reduce((s, l) => s + l.balance, 0);
   const contracts = contractsOf(ctx, emp.company_id);
   return {
-    employee: { id: emp.id, name: emp.name, status: emp.status, company_name: emp.company_name, company_status: emp.company_status, has_pin: !!emp.pin_hash },
+    employee: { id: emp.id, name: emp.name, status: emp.status, company_name: emp.company_name, company_status: emp.company_status },
+    device: walletDevice(ctx, emp.id, actor.deviceId),
+    synced_at: new Date().toISOString(),
     currency: lots[0]?.currency ?? contracts[0]?.currency ?? 'HTG',
     available_minor: available,
     reserved_minor: ctx.ledger.balance(acct.reserved(emp.id)),

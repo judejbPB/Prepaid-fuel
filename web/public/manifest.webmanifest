@@ -1,0 +1,10 @@
+{
+  "name": "BOUSOL Fuel Wallet",
+  "short_name": "BOUSOL Fuel",
+  "start_url": "/employee",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#12293f",
+  "theme_color": "#12293f",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

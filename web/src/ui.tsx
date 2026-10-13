@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { api, session, type Surface } from './api';
+import { api, ApiError, session, type Surface } from './api';
 
 // ---------------------------------------------------------------- data hooks
 
@@ -147,7 +147,16 @@ const SURFACE_ROLES: Record<Surface, string[]> = {
   employee: ['employee'],
 };
 
-export function Authed({ surface, children, loginExtra }: { surface: Surface; children: ReactNode; loginExtra?: ReactNode }) {
+const meKey = (s: Surface) => `bousol.me.${s}`;
+const readMe = (s: Surface): Me | null => { try { return JSON.parse(localStorage.getItem(meKey(s)) ?? 'null'); } catch { return null; } };
+const writeMe = (s: Surface, m: Me | null) => { try { m ? localStorage.setItem(meKey(s), JSON.stringify(m)) : localStorage.removeItem(meKey(s)); } catch { /* ignore */ } };
+
+/**
+ * Requires a signed-in user of the surface. With `offlineOk`, a network failure falls back to the
+ * last signed-in profile so the app keeps working without a connection (the session is re-checked
+ * when the network returns).
+ */
+export function Authed({ surface, children, loginExtra, offlineOk }: { surface: Surface; children: ReactNode; loginExtra?: ReactNode; offlineOk?: boolean }) {
   const [me, setMe] = useState<Me | null>(null);
   const [checked, setChecked] = useState(false);
   const load = useCallback(async () => {
@@ -155,12 +164,14 @@ export function Authed({ surface, children, loginExtra }: { surface: Surface; ch
     try {
       const m = await api(surface).get<Me>('/api/me');
       if (!SURFACE_ROLES[surface].includes(m.role)) { session.clear(surface); setMe(null); }
-      else setMe(m);
-    } catch {
-      setMe(null);
+      else { setMe(m); if (offlineOk) writeMe(surface, m); }
+    } catch (err) {
+      const offline = !(err instanceof ApiError);
+      if (offlineOk && offline && readMe(surface)) setMe(readMe(surface));
+      else { setMe(null); if (offlineOk) writeMe(surface, null); }
     }
     setChecked(true);
-  }, [surface]);
+  }, [surface, offlineOk]);
   useEffect(() => { load(); }, [load]);
   if (!checked) return null;
   if (!me) return <Login surface={surface} onDone={load} extra={loginExtra} />;

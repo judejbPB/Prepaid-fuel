@@ -221,17 +221,19 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
       if (!ok) throw new AppError(404, 'not_found', 'Redemption not found');
       return r;
     });
+    api.post('/api/redemptions/:id/challenge', async (req) => red.refreshChallenge(ctx, req.actor, params(req)));
+    api.post('/api/redemptions/:id/authorize', async (req) =>
+      red.authorizeRequest(ctx, req.actor, params(req), body(z.object({ token: z.string().min(10).max(2000) }), req).token));
     api.post('/api/redemptions/:id/complete', async (req) =>
       red.completeRequest(ctx, req.actor, params(req), body(z.object({ gallons: z.number().positive().optional(), amount: money.optional() }), req)));
     api.post('/api/redemptions/:id/cancel', async (req) => red.cancelRequest(ctx, req.actor, params(req)));
 
     // ---- employee app
     api.get('/api/wallet', async (req) => reports.wallet(ctx, req.actor));
-    api.post('/api/wallet/pin', async (req) =>
-      admin.setPin(ctx, req.actor, body(z.object({ password: z.string(), pin: z.string() }), req)));
-    api.post('/api/wallet/preview', async (req) => red.previewRequest(ctx, req.actor, body(z.object({ code: z.string().min(4) }), req).code));
-    api.post('/api/wallet/approve', async (req) =>
-      red.approveRequest(ctx, req.actor, body(z.object({ code: z.string().min(4), pin: z.string().min(4) }), req)));
+    api.post('/api/wallet/enroll', async (req) =>
+      admin.enrollDevice(ctx, req.actor, body(z.object({
+        password: z.string(), publicKeyJwk: z.record(z.string(), z.unknown()), pinKey: z.string().max(100),
+      }), req)));
     api.post('/api/redemptions/:id/dispute', async (req) =>
       exc.raiseDispute(ctx, req.actor, params(req), body(z.object({ reason: z.string().min(3) }), req).reason));
 

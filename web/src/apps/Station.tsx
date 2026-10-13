@@ -1,6 +1,8 @@
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { api, cap, gal, money, session, when } from '../api';
+import { RESPONSE_PREFIX } from '../offline';
+import { QrScanner } from '../scanner';
 import { Authed, Empty, Kpi, PageHead, Shell, Status, useAction, useLoad, useLogout, useMe } from '../ui';
 import { ExceptionsPanel } from './shared';
 
@@ -61,12 +63,13 @@ function Terminal() {
   const info = session.terminalInfo();
   const shift = data?.shift;
 
-  // Poll the in-flight request so the screen advances when the employee approves on their phone.
+  // While the QR is on screen, keep its challenge fresh: the server rotates it every 30 s so a photo
+  // or screenshot of the terminal stops working almost immediately.
   useEffect(() => {
-    if (!active || !['pending', 'approved'].includes(active.status)) return;
+    if (!active || active.status !== 'pending') return;
     const t = setInterval(async () => {
-      try { setActive(await s.get(`/api/redemptions/${active.id}`)); } catch { /* keep last state */ }
-    }, 2000);
+      try { setActive(await s.post(`/api/redemptions/${active.id}/challenge`)); } catch { /* keep last state */ }
+    }, 3000);
     return () => clearInterval(t);
   }, [active?.id, active?.status]);
 
@@ -121,8 +124,16 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
   const { busy, run } = useAction();
 
   useEffect(() => {
-    if (active?.qr) QRCode.toDataURL(active.qr, { margin: 1, width: 240 }).then(setQr);
-  }, [active?.qr]);
+    if (active?.challenge) QRCode.toDataURL(active.challenge, { margin: 1, width: 260, errorCorrectionLevel: 'L' }).then(setQr);
+  }, [active?.challenge]);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
+  const rotateLeft = active?.nonce_at ? Math.max(0, 30 - (now - Date.parse(active.nonce_at.replace(' ', 'T') + 'Z')) / 1000) : 0;
+
+  const authorize = async (token: string) => {
+    const r = await run(() => s.post(`/api/redemptions/${active.id}/authorize`, { token }), 'Approved by employee');
+    if (r) setActive(r);
+  };
   useEffect(() => {
     if (active?.status !== 'approved') return;
     // Pre-fill with what was approved, in the unit the attendant asked in.
@@ -169,10 +180,15 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
           </>}
           {step === 2 && <>
             <h3>Waiting for employee approval</h3>
-            <div className="kv mt"><span>Fuel</span><b>{cap(active.grade)}</b></div>
-            <div className="kv"><span>Pump</span><b>{active.pump}</b></div>
-            <div className="kv"><span>Requested</span><b style={{ fontSize: 22 }}>{requested(active)}</b></div>
-            <p className="small muted mt">Ask the employee to scan the QR with their BOUSOL app and confirm with their PIN. Do not dispense yet. Request expires {when(active.expires_at)}.</p>
+            <div className="row" style={{ gap: 18, marginTop: 6 }}>
+              <span>{cap(active.grade)}</span><span>Pump {active.pump}</span><b style={{ fontSize: 20 }}>{requested(active)}</b>
+            </div>
+            <ol className="small muted" style={{ paddingLeft: 18, margin: '10px 0' }}>
+              <li>The employee scans the QR on the right with the BOUSOL app (no internet needed) and enters their PIN.</li>
+              <li>Scan the approval code on their phone here. Check the code’s bar is moving: a frozen bar means a photo.</li>
+            </ol>
+            <QrScanner prefix={RESPONSE_PREFIX} facing="environment" label="Scan employee phone" onResult={authorize} />
+            <p className="small muted">Do not dispense yet. Request expires {when(active.expires_at)}.</p>
             <button className="secondary mt" disabled={busy} onClick={cancel}>Cancel request</button>
           </>}
           {step === 3 && <>
@@ -202,9 +218,10 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
         </div>
         <div className="qr-box">
           {step === 2 && qr ? <>
-            <img src={qr} alt="Redemption QR code" width={240} height={240} />
-            <div className="code">{active.code}</div>
-            <div className="muted">Waiting for employee approval</div>
+            <img src={qr} alt="Station QR for the employee to scan" width={260} height={260} data-testid="station-challenge" data-challenge={active.challenge} />
+            <div className="live-bar" aria-hidden><div /></div>
+            <div className="rotate-bar" title="QR refreshes every 30 seconds"><div style={{ width: `${(rotateLeft / 30) * 100}%` }} /></div>
+            <div className="muted small">New code in {Math.ceil(rotateLeft)}s · photos of this QR stop working</div>
           </> : <div className="muted small" style={{ padding: 40 }}>{step === 1 ? 'The QR appears here after you create a request.' : step === 3 ? 'QR used. Single use only.' : '✓'}</div>}
         </div>
       </div>

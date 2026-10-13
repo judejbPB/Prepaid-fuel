@@ -24,3 +24,8 @@ createRoot(document.getElementById('root')!).render(
     </ToastProvider>
   </StrictMode>,
 );
+
+// Offline support (production builds only; the dev server serves modules that shouldn't be cached).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

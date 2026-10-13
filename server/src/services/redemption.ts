@@ -1,17 +1,17 @@
-import { randomInt } from 'node:crypto';
-import { requireRole, verifySecret, type Actor } from '../auth.js';
+import { randomBytes, randomInt } from 'node:crypto';
+import { requireRole, type Actor } from '../auth.js';
 import type { Ctx } from '../context.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { acct, type Line } from '../ledger.js';
 import { gallonsFor, GRADES, nowIso, toMgal, toMinor, valueOf } from '../units.js';
-import { activeContract } from './funding.js';
+import {
+  decodeResponse, encodeChallenge, tokenMessage, verifyPinProof, verifySignature,
+} from '../offline.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from({ length: 10 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
 
-/** QR payload shown on the station terminal. */
-export const qrPayload = (code: string) => `BOUSOL:R:${code}`;
-export const parseCode = (scanned: string) => scanned.trim().toUpperCase().replace(/^BOUSOL:R:/, '');
+const newNonce = () => randomBytes(9).toString('base64url');
 
 function attendantContext(ctx: Ctx, actor: Actor) {
   requireRole(actor, ['st_attendant']);
@@ -146,7 +146,33 @@ export function getRedemption(ctx: Ctx, id: number) {
     id,
   );
   if (!r) throw notFound('Redemption');
-  return { ...r, qr: qrPayload(r.code) };
+  const { challenge_nonce, prev_nonce, ...rest } = r;
+  return {
+    ...rest,
+    // Only an open request exposes its challenge; it is shown as the terminal QR.
+    challenge: r.status === 'pending'
+      ? encodeChallenge({ c: r.code, n: challenge_nonce, s: r.station_name, p: r.pump, g: r.grade, a: r.requested_minor, q: r.requested_mgal })
+      : null,
+  };
+}
+
+/**
+ * Rotates the challenge nonce once it is older than the rotation period. The terminal calls this
+ * while it shows the QR, so a photo or screenshot of the QR stops working within one or two periods.
+ */
+export function refreshChallenge(ctx: Ctx, actor: Actor, id: number) {
+  attendantContext(ctx, actor);
+  return ctx.db.tx(() => {
+    const red = getRedemption(ctx, id);
+    if (red.terminal_id !== actor.terminalId) throw forbidden('Request belongs to another terminal');
+    if (red.status !== 'pending') return red;
+    ctx.db.run(
+      `UPDATE redemptions SET prev_nonce = challenge_nonce, challenge_nonce = ?, nonce_at = datetime('now')
+        WHERE id = ? AND nonce_at <= datetime('now', ?)`,
+      newNonce(), id, `-${ctx.config.challengeRotateSeconds} seconds`,
+    );
+    return getRedemption(ctx, id);
+  });
 }
 
 /** Exactly one of `gallons` (pump preset) or `amount` (currency, e.g. "2,000 gourdes") is given. */
@@ -175,24 +201,14 @@ export function createRequest(ctx: Ctx, actor: Actor, input: { grade: string; pu
     const shift = currentShift(ctx, actor);
     if (!shift || shift.attendant_id !== actor.userId) throw conflict('no_shift', 'Open your shift first');
     const id = ctx.db.run(
-      `INSERT INTO redemptions (code, station_id, terminal_id, shift_id, attendant_id, pump, grade, requested_mgal, requested_minor, expires_at)
-       VALUES (?,?,?,?,?,?,?,?,?, datetime('now', ?))`,
-      newCode(), station.id, terminal.id, shift.id, actor.userId, input.pump, input.grade, mgal, minor,
+      `INSERT INTO redemptions (code, station_id, terminal_id, shift_id, attendant_id, pump, grade, requested_mgal, requested_minor, challenge_nonce, expires_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?, datetime('now', ?))`,
+      newCode(), station.id, terminal.id, shift.id, actor.userId, input.pump, input.grade, mgal, minor, newNonce(),
       `+${ctx.config.redemptionTtlSeconds} seconds`,
     ).id;
     ctx.db.audit(actor.userId, 'redemption.request', 'redemption', id, input);
     return getRedemption(ctx, id);
   });
-}
-
-function employeeContext(ctx: Ctx, actor: Actor) {
-  requireRole(actor, ['employee']);
-  const emp = ctx.db.get('SELECT * FROM employees WHERE id = ?', actor.employeeId);
-  const company = ctx.db.get('SELECT * FROM companies WHERE id = ?', emp.company_id);
-  if (emp.bound_device_id && emp.bound_device_id !== actor.deviceId) {
-    throw forbidden('This wallet is bound to another phone');
-  }
-  return { emp, company };
 }
 
 /** Prices a request at the employee's company contract price. Gallons are for reference only. */
@@ -205,55 +221,80 @@ function priceRequest(ctx: Ctx, companyId: number, red: any) {
   return { price, currency: contract.currency as string, amount, gallons };
 }
 
-/** Step 2a · Employee scans the QR and sees exactly what they are approving. */
-export function previewRequest(ctx: Ctx, actor: Actor, scanned: string) {
-  const { emp } = employeeContext(ctx, actor);
-  expireStale(ctx);
-  const r = ctx.db.get('SELECT id FROM redemptions WHERE code = ?', parseCode(scanned));
-  if (!r) throw notFound('Fueling request');
-  const red = getRedemption(ctx, r.id);
-  if (red.status !== 'pending') throw conflict('not_pending', `This request is ${red.status}`);
-  const priced = priceRequest(ctx, emp.company_id, red);
-  return {
-    id: red.id, code: red.code, station_name: red.station_name, pump: red.pump, grade: red.grade,
-    amount_minor: priced.amount, gallons_mgal: priced.gallons, price_minor: priced.price, currency: priced.currency,
-    by_amount: red.requested_minor !== null, expires_at: red.expires_at,
-    available_minor: ctx.ledger.spendable(acct.available(emp.id)),
-  };
+/** Proof that the challenge in the token is the one on screen now (or the one just before it). */
+function challengeIsFresh(ctx: Ctx, red: any, nonce: string) {
+  const row = ctx.db.get(
+    `SELECT challenge_nonce = ? AS cur,
+            prev_nonce = ? AND nonce_at > datetime('now', ?) AS prev
+       FROM redemptions WHERE id = ?`,
+    nonce, nonce, `-${ctx.config.challengeRotateSeconds} seconds`, red.id,
+  );
+  return Boolean(row.cur || row.prev);
 }
 
-/** Step 2b · Employee confirms with PIN. The price is locked and the amount moves available -> reserved. */
-export function approveRequest(ctx: Ctx, actor: Actor, input: { code: string; pin: string }) {
-  const { emp, company } = employeeContext(ctx, actor);
-  if (emp.status !== 'active') throw conflict('frozen', 'Your fuel wallet is frozen');
-  if (company.status !== 'active') throw conflict('frozen', 'Your company’s program is frozen');
-  if (!emp.pin_hash) throw conflict('no_pin', 'Set your PIN first');
+function recordPinFailure(ctx: Ctx, emp: any, actorId: number) {
+  const failures = emp.pin_failures + 1;
+  const lock = failures >= ctx.config.maxPinFailures;
+  ctx.db.run(
+    "UPDATE employees SET pin_failures = ?, pin_locked_until = CASE WHEN ? THEN datetime('now', '+1 day') ELSE pin_locked_until END WHERE id = ?",
+    failures, lock ? 1 : 0, emp.id,
+  );
+  ctx.db.audit(actorId, 'pin.failed', 'employee', emp.id, { failures });
+  return new AppError(401, 'bad_pin', lock ? 'Wallet locked after too many wrong PINs' : `Wrong PIN (${ctx.config.maxPinFailures - failures} tries left). Ask the employee to try again.`);
+}
+
+/**
+ * Step 2 · The terminal scans the approval code shown on the employee's phone (which may be offline)
+ * and submits it. Everything the phone signed is checked here; only then is the amount reserved
+ * and the price locked.
+ */
+export function authorizeRequest(ctx: Ctx, actor: Actor, id: number, rawToken: string) {
+  attendantContext(ctx, actor);
+  const token = decodeResponse(rawToken);
+  const message = tokenMessage(token);
+
+  const red = getRedemption(ctx, id);
+  if (red.terminal_id !== actor.terminalId) throw forbidden('Request belongs to another terminal');
+  if (red.status !== 'pending') throw conflict('not_pending', `This request is ${red.status}`);
+  if (token.c !== red.code) throw conflict('wrong_request', 'This approval was made for a different request');
+  if (!challengeIsFresh(ctx, red, token.n)) {
+    throw conflict('stale_challenge', 'Approval code is too old. Ask the employee to scan the QR again.');
+  }
+
+  const device = ctx.db.get(
+    "SELECT * FROM employee_devices WHERE id = ? AND employee_id = ? AND status = 'active'", token.k, token.e,
+  );
+  if (!device || !verifySignature(JSON.parse(device.public_key_jwk), message, token.s)) {
+    ctx.db.audit(actor.userId, 'redemption.bad_signature', 'redemption', red.id, { employee: token.e, key: token.k });
+    throw conflict('bad_signature', 'Approval code is not from this employee’s registered phone');
+  }
+  if (token.t <= device.last_counter) {
+    ctx.db.audit(actor.userId, 'redemption.replay', 'redemption', red.id, { device: device.id, counter: token.t });
+    throw conflict('replayed', 'This approval code was already used');
+  }
+
+  const emp = ctx.db.get('SELECT * FROM employees WHERE id = ?', token.e);
+  const company = ctx.db.get('SELECT * FROM companies WHERE id = ?', emp.company_id);
+  if (emp.status !== 'active') throw conflict('frozen', 'This fuel wallet is frozen');
+  if (company.status !== 'active') throw conflict('frozen', 'This company’s program is frozen');
   if (emp.pin_locked_until && emp.pin_locked_until > nowIso()) {
-    throw new AppError(423, 'pin_locked', 'Too many wrong PINs. Ask your company admin for assisted recovery.');
+    throw new AppError(423, 'pin_locked', 'Wallet locked after too many wrong PINs. The company admin must do assisted recovery.');
   }
-  if (!verifySecret(input.pin, emp.pin_hash)) {
-    const failures = emp.pin_failures + 1;
-    const lock = failures >= ctx.config.maxPinFailures;
-    ctx.db.run(
-      "UPDATE employees SET pin_failures = ?, pin_locked_until = CASE WHEN ? THEN datetime('now', '+1 day') ELSE pin_locked_until END WHERE id = ?",
-      failures, lock ? 1 : 0, emp.id,
-    );
-    ctx.db.audit(actor.userId, 'pin.failed', 'employee', emp.id, { failures });
-    throw new AppError(401, 'bad_pin', lock ? 'Wallet locked after too many wrong PINs' : `Wrong PIN (${ctx.config.maxPinFailures - failures} tries left)`);
-  }
+
+  // The counter is consumed even when the PIN is wrong, so a failed code can't be retried.
+  ctx.db.run('UPDATE employee_devices SET last_counter = ? WHERE id = ?', token.t, device.id);
+  if (!verifyPinProof(device.pin_key, message, token.h)) throw recordPinFailure(ctx, emp, actor.userId);
 
   return ctx.db.tx(() => {
     ctx.db.run('UPDATE employees SET pin_failures = 0 WHERE id = ?', emp.id);
-    expireStale(ctx);
-    const row = ctx.db.get('SELECT id FROM redemptions WHERE code = ?', parseCode(input.code));
-    if (!row) throw notFound('Fueling request');
-    const red = getRedemption(ctx, row.id);
-    if (red.status !== 'pending') throw conflict('not_pending', `This request is ${red.status}`);
     const station = ctx.db.get('SELECT status FROM stations WHERE id = ?', red.station_id);
     const terminal = ctx.db.get('SELECT status FROM terminals WHERE id = ?', red.terminal_id);
     if (station.status !== 'active' || terminal.status !== 'active') throw conflict('frozen', 'Station is not accepting redemptions');
 
     const priced = priceRequest(ctx, emp.company_id, red);
+    if (priced.amount > token.m) {
+      throw conflict('price_changed', 'The price changed since the phone last synced. Connect the phone once and try again.');
+    }
     const picks = ctx.ledger.pickFifo(acct.available(emp.id), priced.amount);
     const lines: Line[] = picks.flatMap((p) => [
       { account: acct.available(emp.id), unit: p.currency, lotId: p.lotId, debit: p.amount },
@@ -262,17 +303,17 @@ export function approveRequest(ctx: Ctx, actor: Actor, input: { code: string; pi
     const entryId = ctx.ledger.post({
       kind: 'redemption_reserved', refType: 'redemption', refId: red.id, companyId: emp.company_id,
       memo: `${red.station_name} pump ${red.pump} · ${red.grade} ≈ ${(priced.gallons / 1000).toFixed(2)} gal`,
-      createdBy: actor.userId, lines,
+      createdBy: emp.user_id, lines,
     });
     // Single use: the conditional update guarantees only one approval wins.
     const upd = ctx.db.run(
-      `UPDATE redemptions SET status = 'approved', employee_id = ?, company_id = ?, reserve_entry_id = ?, approved_at = ?,
-              price_minor = ?, currency = ?, approved_minor = ?, approved_mgal = ?
+      `UPDATE redemptions SET status = 'approved', employee_id = ?, company_id = ?, device_key_id = ?, reserve_entry_id = ?,
+              approved_at = ?, price_minor = ?, currency = ?, approved_minor = ?, approved_mgal = ?
         WHERE id = ? AND status = 'pending'`,
-      emp.id, emp.company_id, entryId, nowIso(), priced.price, priced.currency, priced.amount, priced.gallons, red.id,
+      emp.id, emp.company_id, device.id, entryId, nowIso(), priced.price, priced.currency, priced.amount, priced.gallons, red.id,
     );
     if (upd.changes !== 1) throw conflict('not_pending', 'Request already used');
-    ctx.db.audit(actor.userId, 'redemption.approve', 'redemption', red.id, { amount: priced.amount, price: priced.price });
+    ctx.db.audit(actor.userId, 'redemption.authorize', 'redemption', red.id, { employee: emp.id, device: device.id, counter: token.t, amount: priced.amount });
     return getRedemption(ctx, red.id);
   });
 }

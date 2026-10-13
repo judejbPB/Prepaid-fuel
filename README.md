@@ -35,14 +35,15 @@ Production-style: `npm run build && npm start` serves the API and the built web 
 | Company A preparer / approver | `prep@companya`, `approve@companya` |
 | Station attendants (need the terminal activated first) | `attendant1@bousol` … `attendant4@bousol` |
 | Station managers | `manager1@bousol` … `manager4@bousol` |
-| Employees (phone number, PIN `1234`) | `50937000001` (Jean P.), `50937000002` (Marie L.) |
+| Employees (phone number; choose a PIN on first sign-in) | `50937000001` (Jean P.), `50937000002` (Marie L.) |
 
 Terminal activation codes: `STATION1` … `STATION4` (single use).
 
 **Try the whole loop:** open `/station`, activate with `STATION2`, sign in as `attendant2@bousol`, open a
-shift and create a 12 gal diesel request. In another browser profile open `/employee`, sign in as
-`50937000001`, scan the QR (or type the code under it), enter PIN `1234`. Back on the terminal, confirm the
-dispensed quantity. Close the shift with pump totals that don't match to see the variance flow through
+shift and create a 2,000 HTG diesel request. In another browser profile open `/employee`, sign in as
+`50937000001` and set up the phone with a PIN (e.g. `1234`). You can now switch that profile offline.
+Tap **Pay at pump**, scan the terminal QR, enter the PIN, and scan the phone's approval code with the
+terminal (both screens also have "Enter code manually" for testing without cameras). Confirm the sale. Close the shift with pump totals that don't match to see the variance flow through
 the station manager to the distributor.
 
 ## How it works
@@ -81,15 +82,50 @@ reversing entries.
 **Daily balance rule** (checked on the dashboard and at `GET /api/ledger/check`), per lot:
 cleared funds = unallocated + employee available + reserved + redeemed + expired + refunded.
 
+### Paying at the pump: works offline, screenshot-proof
+The employee's phone does **not** need a connection at the station. The station terminal stays online.
+
+```
+Terminal (online)                                  Employee phone (offline OK)
+1. Attendant enters fuel, pump, amount or gallons
+2. Shows CHALLENGE QR ──────── phone scans ────►   3. Shows station, pump, amount (≈ gallons at the
+   (nonce rotates every 30 s)                         synced contract price). Employee enters PIN.
+                                                   4. Shows APPROVAL QR, valid 60 s
+5. Scans approval QR ◄──────── terminal scans ───
+6. Server verifies, locks the price, reserves the amount → attendant dispenses → confirms the sale
+```
+
+The approval code contains an **ECDSA P-256 signature** made with a private key generated on the phone at
+enrollment and stored as **non-extractable** (WebCrypto + IndexedDB), plus a **PIN proof**
+(`HMAC(PBKDF2(PIN), message)`). It is bound to the request, the current challenge nonce, the maximum amount
+shown to the employee and a **counter that never repeats**.
+
+| Fraud attempt | Why it fails |
+|---|---|
+| Screenshot of an approval code reused later or at another pump | Bound to one request and one challenge; counter already consumed → rejected |
+| Photo of the station QR sent to someone elsewhere | Challenge rotates every 30 s (previous one accepted for 30 s more) and the request expires in 3 min |
+| Approval code edited to a different amount | Signature no longer verifies |
+| Copying the wallet to another phone | Private key can't be exported; only the enrolled phone's key is accepted |
+| Stolen phone | No PIN → invalid PIN proof; 5 wrong PINs lock the wallet. The phone stores no PIN verifier, so PINs can't be guessed offline |
+| Fake "station" QR showing a lower amount | Server checks the code against the real request; the employee's signed maximum must cover the real amount |
+| Remote approval by a colluding employee | Employee must physically present the code to the terminal camera within 60 s; the terminal shows the employee's name; a moving bar on the phone exposes static photos |
+
+Enrollment happens once, online, after the employee signs in (and again after assisted recovery, which
+revokes the old key). The app shell is cached by a service worker and the last synced wallet is stored on
+the phone, so the app opens and pays with no connection. Approvals made offline show as "not yet synced"
+and are subtracted from the displayed balance until the phone reconnects. If a contract price rose after
+the phone last synced, the terminal refuses the code and asks the employee to connect once.
+
 ### Controls
 - **Maker-checker** wherever money moves: the person who matches a deposit can't activate it;
   batches over the company threshold need a second approver; whoever proposes a reversal or adjustment
   can't approve it.
-- **Single-use QR** requests with a 5-minute expiry; a conditional update guarantees only one approval wins.
+- **Single-use, rotating QR** requests with a 3-minute expiry; a conditional update guarantees only one approval wins.
 - **The employee confirms the exact amount, fuel, station and pump** with a PIN before anything is reserved.
   The wallet is only charged when the attendant confirms what was dispensed; any unused remainder is released.
-- **PIN lockout** after 5 wrong attempts; **device binding** of each employee wallet to one phone;
-  **assisted recovery** (reset PIN, unbind device, temporary password) by the company approver.
+- **PIN lockout** after 5 wrong attempts; **device binding** of each employee wallet to one phone with a
+  non-extractable signing key; **assisted recovery** (revoke key, unbind phone, temporary password) by the
+  company approver.
 - **One terminal per station**, activated with a one-time code; attendants can only sign in on their own
   station's terminal, under a named shift.
 - **Freeze** any company, employee, station, terminal or lot.
@@ -134,7 +170,9 @@ from the control center. Put it behind HTTPS (e.g. a reverse proxy or your host'
 `/data` volume. Do **not** run `npm run seed` in production: it wipes the database and loads demo data.
 
 ## Not yet built (pilot follow-ups)
-- Biometric approval (WebAuthn) alongside PIN; native Android packaging for the station terminal.
+- Native Android packaging (Capacitor/TWA) to set `FLAG_SECURE` on QR screens, which blocks screenshots at
+  the OS level; and hardware-backed keys (Android Keystore) with biometric unlock alongside the PIN.
+- Offline mode for the station terminal itself (today the terminal must be online to submit approvals).
 - Direct bank API feed (statement import is CSV upload today).
 - SMS/WhatsApp notifications, CSV roster import, report exports.
 - Production hardening: Postgres, rate limiting, secrets management, monitoring.
