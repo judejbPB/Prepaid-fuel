@@ -8,6 +8,7 @@ const fmt = (minor: number, ccy = 'HTG') => `${(minor / 100).toLocaleString('en-
 
 export type Proposal =
   | { action: 'accept_variance'; note: string }
+  | { action: 'acknowledge'; note: string }
   | { action: 'reverse'; amount: number; note: string }
   | { action: 'reject_dispute'; note: string }
   | { action: 'return_to_company'; employeeId: number; amount: number; note: string };
@@ -105,6 +106,10 @@ export function propose(ctx: Ctx, actor: Actor, id: number, proposal: Proposal) 
       } else if (proposal.action !== 'reject_dispute') {
         throw badRequest('bad_action', 'Disputes are reversed or rejected');
       }
+    } else if (e.kind === 'offline_shortfall' || e.kind === 'offline_rejected') {
+      // Fuel was already dispensed; the decision records how the loss is handled (recovered or written off).
+      requireRole(actor, ['st_manager', ...DISTRIBUTOR]);
+      if (proposal.action !== 'acknowledge') throw badRequest('bad_action', 'Offline exceptions are acknowledged with a note');
     } else {
       throw badRequest('bad_action', 'Adjustments are proposed at creation');
     }

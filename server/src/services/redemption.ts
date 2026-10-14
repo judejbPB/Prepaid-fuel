@@ -5,7 +5,7 @@ import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.j
 import { acct, type Line } from '../ledger.js';
 import { gallonsFor, GRADES, nowIso, toMgal, toMinor, valueOf } from '../units.js';
 import {
-  decodeResponse, encodeChallenge, tokenMessage, verifyPinProof, verifySignature,
+  decodeResponse, encodeChallenge, tokenMessage, verifyOfflineProof, verifyPinProof, verifySignature,
 } from '../offline.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -13,7 +13,7 @@ const newCode = () => Array.from({ length: 10 }, () => CODE_ALPHABET[randomInt(C
 
 const newNonce = () => randomBytes(9).toString('base64url');
 
-function attendantContext(ctx: Ctx, actor: Actor) {
+export function attendantContext(ctx: Ctx, actor: Actor) {
   requireRole(actor, ['st_attendant']);
   if (!actor.terminalId) throw forbidden('Attendant must be signed in on a station terminal');
   const terminal = ctx.db.get('SELECT * FROM terminals WHERE id = ?', actor.terminalId);
@@ -232,7 +232,16 @@ function challengeIsFresh(ctx: Ctx, red: any, nonce: string) {
   return Boolean(row.cur || row.prev);
 }
 
-function recordPinFailure(ctx: Ctx, emp: any, actorId: number) {
+export const counterUsed = (ctx: Ctx, deviceKeyId: number, counter: number) =>
+  !!ctx.db.get('SELECT 1 FROM used_counters WHERE device_key_id = ? AND counter = ?', deviceKeyId, counter);
+
+/** Marks an approval-code counter as used (each counter is accepted once, in any order). */
+export function consumeCounter(ctx: Ctx, deviceKeyId: number, counter: number, code: string) {
+  ctx.db.run('INSERT INTO used_counters (device_key_id, counter, redemption_code) VALUES (?,?,?)', deviceKeyId, counter, code);
+  ctx.db.run('UPDATE employee_devices SET last_counter = MAX(last_counter, ?) WHERE id = ?', counter, deviceKeyId);
+}
+
+export function recordPinFailure(ctx: Ctx, emp: any, actorId: number) {
   const failures = emp.pin_failures + 1;
   const lock = failures >= ctx.config.maxPinFailures;
   ctx.db.run(
@@ -268,7 +277,7 @@ export function authorizeRequest(ctx: Ctx, actor: Actor, id: number, rawToken: s
     ctx.db.audit(actor.userId, 'redemption.bad_signature', 'redemption', red.id, { employee: token.e, key: token.k });
     throw conflict('bad_signature', 'Approval code is not from this employee’s registered phone');
   }
-  if (token.t <= device.last_counter) {
+  if (counterUsed(ctx, device.id, token.t)) {
     ctx.db.audit(actor.userId, 'redemption.replay', 'redemption', red.id, { device: device.id, counter: token.t });
     throw conflict('replayed', 'This approval code was already used');
   }
@@ -282,8 +291,10 @@ export function authorizeRequest(ctx: Ctx, actor: Actor, id: number, rawToken: s
   }
 
   // The counter is consumed even when the PIN is wrong, so a failed code can't be retried.
-  ctx.db.run('UPDATE employee_devices SET last_counter = ? WHERE id = ?', token.t, device.id);
-  if (!verifyPinProof(device.pin_key, message, token.h)) throw recordPinFailure(ctx, emp, actor.userId);
+  consumeCounter(ctx, device.id, token.t, red.code);
+  if (!verifyPinProof(device.pin_key, message, token.h) || !verifyOfflineProof(device.pin_key, message, token.o)) {
+    throw recordPinFailure(ctx, emp, actor.userId);
+  }
 
   return ctx.db.tx(() => {
     ctx.db.run('UPDATE employees SET pin_failures = 0 WHERE id = ?', emp.id);

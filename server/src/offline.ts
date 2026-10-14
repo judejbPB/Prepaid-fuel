@@ -43,8 +43,9 @@ export interface ResponseToken {
   k: number;
   t: number;
   m: number;
-  /** PIN proof and signature, base64url */
+  /** PIN proof (checked by the server), offline PIN proof (checked by an offline terminal) and signature, base64url */
   h: string;
+  o: string;
   s: string;
 }
 
@@ -66,7 +67,7 @@ export function decodeResponse(raw: string): ResponseToken {
     throw badRequest('bad_token', 'Unreadable approval code');
   }
   const ints = ['e', 'k', 't', 'm'] as const;
-  const strs = ['c', 'n', 'h', 's'] as const;
+  const strs = ['c', 'n', 'h', 'o', 's'] as const;
   if (!t || ints.some((f) => !Number.isSafeInteger(t[f]) || t[f] < 0) || strs.some((f) => typeof t[f] !== 'string' || t[f].length > 200)) {
     throw badRequest('bad_token', 'Malformed approval code');
   }
@@ -119,3 +120,24 @@ export function decodeChallenge(raw: string): Challenge {
 }
 
 export const encodeResponse = (t: ResponseToken) => RESPONSE_PREFIX + b64url(Buffer.from(JSON.stringify(t)));
+
+/**
+ * Offline terminals can't hold pinKey (it is the server's PIN check). Instead each terminal's offline
+ * pack carries verifier = HMAC(pinKey, label), and the phone adds o = HMAC(verifier, message). On its own
+ * the verifier can't produce a valid code: that also needs the phone's non-extractable signing key.
+ */
+const VERIFIER_LABEL = 'BSL1-offline-verifier';
+
+export function offlineVerifier(pinKey: Buffer): Buffer {
+  return createHmac('sha256', pinKey).update(VERIFIER_LABEL).digest();
+}
+
+export function offlineProof(verifier: Buffer, message: string): Buffer {
+  return createHmac('sha256', verifier).update(message).digest().subarray(0, PIN_PROOF_BYTES);
+}
+
+export function verifyOfflineProof(pinKeyB64: string, message: string, proofB64url: string): boolean {
+  const expected = offlineProof(offlineVerifier(Buffer.from(pinKeyB64, 'base64')), message);
+  const got = Buffer.from(proofB64url, 'base64url');
+  return got.length === expected.length && timingSafeEqual(got, expected);
+}

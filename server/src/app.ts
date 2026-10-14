@@ -9,6 +9,7 @@ import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
 import * as refunds from './services/refunds.js';
+import * as stationOffline from './services/station-offline.js';
 import * as exc from './services/exceptions.js';
 import * as funding from './services/funding.js';
 import * as red from './services/redemption.js';
@@ -221,6 +222,19 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
       if (!ok) throw new AppError(404, 'not_found', 'Redemption not found');
       return r;
     });
+    api.get('/api/station/offline-pack', async (req) => stationOffline.offlinePack(ctx, req.actor));
+    api.post('/api/station/offline-sync', async (req) => {
+      const sale = z.object({
+        clientId: z.string().min(8).max(64), code: z.string().min(4).max(40), nonce: z.string().min(4).max(64),
+        shiftId: id, grade: z.string(), pump: z.number().int().positive(),
+        requestedMinor: z.number().int().positive().nullable(), requestedMgal: z.number().int().positive().nullable(),
+        priceMinor: z.number().int().positive(), currency: z.string().length(3),
+        approvedMinor: z.number().int().positive(), approvedMgal: z.number().int().nonnegative(),
+        dispensedMgal: z.number().int().nonnegative(), chargedMinor: z.number().int().positive(),
+        token: z.string().min(10).max(2000), approvedAt: z.string(), completedAt: z.string(),
+      });
+      return stationOffline.syncOfflineSales(ctx, req.actor, body(z.object({ sales: z.array(sale).max(500) }), req).sales);
+    });
     api.post('/api/redemptions/:id/challenge', async (req) => red.refreshChallenge(ctx, req.actor, params(req)));
     api.post('/api/redemptions/:id/authorize', async (req) =>
       red.authorizeRequest(ctx, req.actor, params(req), body(z.object({ token: z.string().min(10).max(2000) }), req).token));
@@ -242,6 +256,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     api.post('/api/exceptions/:id/propose', async (req) => {
       const proposal = body(z.discriminatedUnion('action', [
         z.object({ action: z.literal('accept_variance'), note: z.string().min(3) }),
+        z.object({ action: z.literal('acknowledge'), note: z.string().min(3) }),
         z.object({ action: z.literal('reverse'), amount: money, note: z.string().min(3) }),
         z.object({ action: z.literal('reject_dispute'), note: z.string().min(3) }),
       ]), req);

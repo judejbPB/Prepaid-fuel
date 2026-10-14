@@ -133,6 +133,19 @@ export class Ledger {
     return this.lotBalances(account, { activeOnly: true }).reduce((s, l) => s + l.balance, 0);
   }
 
+  /** Like pickFifo, but takes whatever is available up to `amount` instead of failing. */
+  pickUpTo(account: string, amount: number) {
+    const picks: { lotId: number; amount: number; currency: string }[] = [];
+    let remaining = amount;
+    for (const lot of this.lotBalances(account, { activeOnly: true })) {
+      if (remaining <= 0) break;
+      const take = Math.min(lot.balance, remaining);
+      picks.push({ lotId: lot.lot_id, amount: take, currency: lot.currency });
+      remaining -= take;
+    }
+    return { picks, covered: amount - remaining, short: remaining };
+  }
+
   /** Picks amounts from lots FIFO (earliest expiry first) to cover `amount` held in `account`. */
   pickFifo(account: string, amount: number) {
     const picks: { lotId: number; amount: number; currency: string }[] = [];
