@@ -84,6 +84,27 @@ CREATE TABLE IF NOT EXISTS employee_devices (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_device ON employee_devices(employee_id) WHERE status = 'active';
 
+-- Every approval-code counter ever accepted, per device key. Offline terminals can sync out of order,
+-- so replay protection is "each counter once" rather than "counters only go up".
+CREATE TABLE IF NOT EXISTS used_counters (
+  device_key_id INTEGER NOT NULL REFERENCES employee_devices(id),
+  counter INTEGER NOT NULL,
+  redemption_code TEXT NOT NULL,
+  used_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (device_key_id, counter)
+);
+
+-- One row per sale an offline terminal submits, so re-sending a batch never double-posts.
+CREATE TABLE IF NOT EXISTS offline_sync_log (
+  client_id TEXT PRIMARY KEY,
+  terminal_id INTEGER NOT NULL REFERENCES terminals(id),
+  result TEXT NOT NULL,
+  redemption_id INTEGER REFERENCES redemptions(id),
+  exception_id INTEGER REFERENCES exceptions(id),
+  detail TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -278,6 +299,9 @@ CREATE TABLE IF NOT EXISTS redemptions (
   prev_nonce TEXT,
   nonce_at TEXT NOT NULL DEFAULT (datetime('now')),
   device_key_id INTEGER REFERENCES employee_devices(id),
+  -- Set for sales a terminal approved while offline and synced later.
+  offline INTEGER NOT NULL DEFAULT 0,
+  client_id TEXT UNIQUE,
   reserve_entry_id INTEGER REFERENCES journal_entries(id),
   confirm_entry_id INTEGER REFERENCES journal_entries(id),
   expires_at TEXT NOT NULL,
@@ -288,7 +312,7 @@ CREATE TABLE IF NOT EXISTS redemptions (
 
 CREATE TABLE IF NOT EXISTS exceptions (
   id INTEGER PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('shift_variance','dispute','adjustment')),
+  kind TEXT NOT NULL CHECK (kind IN ('shift_variance','dispute','adjustment','offline_shortfall','offline_rejected')),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','proposed','resolved','rejected')),
   ref_type TEXT NOT NULL,
   ref_id INTEGER NOT NULL,

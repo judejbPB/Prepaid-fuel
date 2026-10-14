@@ -18,6 +18,12 @@ export interface Config {
   varianceToleranceMgal: number;
   /** POS vs charged variance (absolute minor units) tolerated before the shift is held. */
   varianceToleranceMinor: number;
+  /** Offline terminals: max an employee can spend per terminal between syncs (minor units). */
+  offlinePerEmployeeMinor: number;
+  /** Offline terminals: max total a terminal can approve between syncs (minor units). */
+  offlineTerminalMinor: number;
+  /** Hours an offline pack stays usable after it was downloaded. */
+  offlinePackHours: number;
   /** Failed PIN attempts before the wallet locks. */
   maxPinFailures: number;
 }
@@ -29,6 +35,9 @@ export const defaultConfig: Config = {
   varianceToleranceMgal: 2000,
   varianceToleranceMinor: 150000,
   maxPinFailures: 5,
+  offlinePerEmployeeMinor: 500_000,
+  offlineTerminalMinor: 10_000_000,
+  offlinePackHours: 24,
 };
 
 export function createCtx(path = ':memory:', config: Partial<Config> = {}): Ctx {

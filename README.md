@@ -116,6 +116,25 @@ the phone, so the app opens and pays with no connection. Approvals made offline 
 and are subtracted from the displayed balance until the phone reconnects. If a contract price rose after
 the phone last synced, the terminal refuses the code and asks the employee to connect once.
 
+### Station terminal offline mode
+When the connection drops, the terminal keeps selling. While online it downloads an **offline pack** every
+minute: each eligible employee's phone public key, a PIN *verifier* (derived from the PIN key, never the
+PIN key itself), their balance at download time, company contract prices and limits. Offline, the terminal:
+
+- shows the same rotating challenge QR and checks the phone's answer locally: ECDSA signature, PIN proof,
+  single-use counter, request code and nonce, price, and the employee's signed maximum;
+- applies offline limits: **5,000 HTG per employee per terminal** and **100,000 HTG per terminal**, never
+  above the employee's balance in the pack; the pack expires after **24 hours**;
+- locks an employee locally after 5 wrong PINs and queues each completed sale on the device.
+
+On reconnect, queued sales sync automatically and idempotently (a resend never double-posts). The server
+re-verifies everything. Each phone approval counter is accepted once across all terminals, so a code
+reused at two stations is rejected. If an employee spent the same balance offline at two stations, the
+gap is charged to the company's unallocated funds; anything still uncovered opens an `offline_shortfall`
+exception. Sales that fail verification open an `offline_rejected` exception, which a manager acknowledges
+with maker-checker. Shift close is blocked until the queue is synced, so reconciliation always includes
+offline sales.
+
 ### Controls
 - **Maker-checker** wherever money moves: the person who matches a deposit can't activate it;
   batches over the company threshold need a second approver; whoever proposes a reversal or adjustment
@@ -172,7 +191,6 @@ from the control center. Put it behind HTTPS (e.g. a reverse proxy or your host'
 ## Not yet built (pilot follow-ups)
 - Native Android packaging (Capacitor/TWA) to set `FLAG_SECURE` on QR screens, which blocks screenshots at
   the OS level; and hardware-backed keys (Android Keystore) with biometric unlock alongside the PIN.
-- Offline mode for the station terminal itself (today the terminal must be online to submit approvals).
 - Direct bank API feed (statement import is CSV upload today).
 - SMS/WhatsApp notifications, CSV roster import, report exports.
 - Production hardening: Postgres, rate limiting, secrets management, monitoring.

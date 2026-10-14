@@ -13,6 +13,7 @@
 export const CHALLENGE_PREFIX = 'BSL1C.';
 export const RESPONSE_PREFIX = 'BSL1R.';
 const PIN_KDF = { hash: 'SHA-256', iterations: 150_000, bits: 256 };
+export const OFFLINE_VERIFIER_LABEL = 'BSL1-offline-verifier';
 
 export interface Challenge {
   c: string;
@@ -35,14 +36,14 @@ interface KeyRecord {
 // ------------------------------------------------------------------ encoding
 
 const enc = new TextEncoder();
-const toB64url = (bytes: ArrayBuffer | Uint8Array) => {
+export const toB64url = (bytes: ArrayBuffer | Uint8Array) => {
   const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let s = '';
   for (const x of b) s += String.fromCharCode(x);
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 const toB64 = (bytes: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
-const fromB64url = (s: string) => {
+export const fromB64url = (s: string) => {
   const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
 };
@@ -53,7 +54,7 @@ export function decodeChallenge(raw: string): Challenge {
   return JSON.parse(new TextDecoder().decode(fromB64url(s.slice(CHALLENGE_PREFIX.length))));
 }
 
-const tokenMessage = (t: { c: string; n: string; e: number; k: number; t: number; m: number }) =>
+export const tokenMessage = (t: { c: string; n: string; e: number; k: number; t: number; m: number }) =>
   `BSL1|${t.c}|${t.n}|${t.e}|${t.k}|${t.t}|${t.m}`;
 
 // ------------------------------------------------------------------ key storage (IndexedDB)
@@ -128,10 +129,15 @@ export async function approveChallenge(employeeId: number, challenge: Challenge,
   await putRecord(rec);
   const base = { c: challenge.c, n: challenge.n, e: employeeId, k: rec.keyId, t: rec.counter, m: max };
   const message = enc.encode(tokenMessage(base));
-  const hmacKey = await crypto.subtle.importKey('raw', await derivePinKey(pin, rec.salt), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const pinKey = await derivePinKey(pin, rec.salt);
+  const hmacKey = await crypto.subtle.importKey('raw', pinKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const proof = new Uint8Array(await crypto.subtle.sign('HMAC', hmacKey, message)).slice(0, 16);
+  // Second PIN proof that an offline station terminal can check with its verifier (see server/src/offline.ts).
+  const verifier = await crypto.subtle.sign('HMAC', hmacKey, enc.encode(OFFLINE_VERIFIER_LABEL));
+  const offlineKey = await crypto.subtle.importKey('raw', verifier, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const offlineProof = new Uint8Array(await crypto.subtle.sign('HMAC', offlineKey, message)).slice(0, 16);
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, rec.privateKey, message);
-  return RESPONSE_PREFIX + toB64url(enc.encode(JSON.stringify({ ...base, h: toB64url(proof), s: toB64url(sig) })));
+  return RESPONSE_PREFIX + toB64url(enc.encode(JSON.stringify({ ...base, h: toB64url(proof), o: toB64url(offlineProof), s: toB64url(sig) })));
 }
 
 // ------------------------------------------------------------------ cached wallet + pending approvals

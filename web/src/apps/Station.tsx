@@ -1,8 +1,12 @@
 import QRCode from 'qrcode';
-import { useEffect, useState } from 'react';
-import { api, cap, gal, money, session, when } from '../api';
+import { useCallback, useEffect, useState } from 'react';
+import { api, ApiError, cap, gal, money, session, when } from '../api';
 import { RESPONSE_PREFIX } from '../offline';
 import { QrScanner } from '../scanner';
+import {
+  authorizeLocal, cancelLocal, completeLocal, createLocalRequest, isLocal, offlineStore, packUsable,
+  refreshLocalRequest, syncAndRefresh, type OfflinePack,
+} from '../station-offline';
 import { Authed, Empty, Kpi, PageHead, Shell, Status, useAction, useLoad, useLogout, useMe } from '../ui';
 import { ExceptionsPanel } from './shared';
 
@@ -17,7 +21,7 @@ export default function Station() {
     ? <div className="badge info">This device: {terminal.station_name} · {terminal.label}</div>
     : <div className="badge warn">Manager sign-in (no terminal on this device)</div>;
   return (
-    <Authed surface="station" loginExtra={extra}>
+    <Authed surface="station" loginExtra={extra} offlineOk>
       <StationHome />
     </Authed>
   );
@@ -53,33 +57,98 @@ function StationHome() {
 
 // ------------------------------------------------------------------ attendant terminal
 
+/** Connectivity as the terminal experiences it: a cheap health check, not just navigator.onLine. */
+function useOnline() {
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    let stop = false;
+    const check = async () => {
+      try {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 4000);
+        const res = await fetch('/api/health', { cache: 'no-store', signal: ctl.signal });
+        clearTimeout(t);
+        if (!stop) setOnline(res.ok);
+      } catch { if (!stop) setOnline(false); }
+    };
+    check();
+    const t = setInterval(check, 8000);
+    window.addEventListener('online', check);
+    window.addEventListener('offline', () => setOnline(false));
+    return () => { stop = true; clearInterval(t); window.removeEventListener('online', check); };
+  }, []);
+  return online;
+}
+
+const STATE_CACHE = 'bousol.station.lastState';
+
 function Terminal() {
   const me = useMe();
   const logout = useLogout('station');
-  const { data, reload } = useLoad(() => s.get('/api/station/state'), [], 5000);
-  const [active, setActive] = useState<any>(null);
+  const online = useOnline();
+  const [data, setData] = useState<any>(() => { try { return JSON.parse(localStorage.getItem(STATE_CACHE) ?? 'null'); } catch { return null; } });
+  const [active, setActive] = useState<any>(() => offlineStore.activeRequest());
   const [closing, setClosing] = useState(false);
+  const [pack, setPack] = useState<OfflinePack | null>(() => offlineStore.pack());
+  const [queued, setQueued] = useState(() => offlineStore.queue().length);
   const { busy, run } = useAction();
   const info = session.terminalInfo();
   const shift = data?.shift;
 
-  // While the QR is on screen, keep its challenge fresh: the server rotates it every 30 s so a photo
-  // or screenshot of the terminal stops working almost immediately.
+  const reload = useCallback(async () => {
+    setQueued(offlineStore.queue().length);
+    try {
+      const fresh = await s.get('/api/station/state');
+      setData(fresh);
+      try { localStorage.setItem(STATE_CACHE, JSON.stringify(fresh)); } catch { /* ignore */ }
+    } catch { /* offline: keep the last known shift */ }
+  }, []);
+  useEffect(() => { reload(); const t = setInterval(reload, 5000); return () => clearInterval(t); }, [reload]);
+
+  // Online: push queued offline sales and keep the offline pack fresh (every minute).
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!online) return;
+    let stop = false;
+    const sync = async () => {
+      try {
+        const out = await syncAndRefresh((p, b) => s.post(p, b), (p) => s.get(p));
+        if (stop) return;
+        setPack(offlineStore.pack());
+        setQueued(out.remaining);
+        if (out.posted || out.rejected) {
+          setSyncNote(`Synced ${out.posted} offline sale(s)${out.rejected ? `, ${out.rejected} rejected and sent to the distributor` : ''}${out.shortfallMinor ? `, ${money(out.shortfallMinor)} not covered` : ''}.`);
+          reload();
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) setPack(null); // terminal frozen: no offline pack
+      }
+    };
+    sync();
+    const t = setInterval(sync, 60_000);
+    return () => { stop = true; clearInterval(t); };
+  }, [online, reload]);
+
+  // While the QR is on screen, keep its challenge fresh so a photo of the terminal stops working.
   useEffect(() => {
     if (!active || active.status !== 'pending') return;
     const t = setInterval(async () => {
+      if (isLocal(active)) { if (pack) setActive(refreshLocalRequest(pack, active)); return; }
       try { setActive(await s.post(`/api/redemptions/${active.id}/challenge`)); } catch { /* keep last state */ }
-    }, 3000);
+    }, isLocal(active) ? 1000 : 3000);
     return () => clearInterval(t);
-  }, [active?.id, active?.status]);
+  }, [active, pack]);
 
-  // Resume an in-flight request after a reload so the attendant never loses track of it.
+  // Resume an in-flight online request after a reload so the attendant never loses track of it.
   useEffect(() => {
-    const inflight = data?.redemptions.find((r: any) => r.status === 'pending' || r.status === 'approved');
-    if (!active && inflight) s.get(`/api/redemptions/${inflight.id}`).then(setActive).catch(() => {});
-  }, [data]);
+    const inflight = data?.redemptions?.find((r: any) => r.status === 'pending' || r.status === 'approved');
+    if (online && !active && inflight) s.get(`/api/redemptions/${inflight.id}`).then(setActive).catch(() => {});
+  }, [data, online]);
 
   const openShift = async () => { if (await run(() => s.post('/api/shifts/open'), 'Shift opened')) reload(); };
+  const mode: 'online' | 'offline' = online ? 'online' : 'offline';
+  const offlineReady = packUsable(pack);
+  const pendingSales = offlineStore.queue().filter((q) => q.shiftId === shift?.id);
 
   return (
     <div className="terminal-bg">
@@ -87,25 +156,40 @@ function Terminal() {
         <div className="row between">
           <h2 style={{ margin: 0 }}>{info?.station_name ?? me.station?.name} · Terminal {info?.label}</h2>
           <div className="row">
-            {shift ? <span className="badge ok">Shift open · {me.name}</span> : <button className="sm" disabled={busy} onClick={openShift}>Open shift</button>}
-            {shift && !active && <button className="sm secondary" onClick={() => setClosing(true)}>Close shift</button>}
+            <span className={`badge ${online ? 'ok' : 'warn'}`} data-testid="connection">{online ? 'Online' : 'Offline mode'}</span>
+            {shift ? <span className="badge ok">Shift open · {me.name}</span> : <button className="sm" disabled={busy || !online} onClick={openShift}>Open shift</button>}
+            {shift && !active && <button className="sm secondary" disabled={!online || queued > 0} title={!online || queued ? 'Sync offline sales first' : ''} onClick={() => setClosing(true)}>Close shift</button>}
             <button className="sm ghost" onClick={logout}>Sign out</button>
           </div>
         </div>
-        {!shift && !closing && <div className="banner mt">Open your named shift to start taking redemption requests.</div>}
-        {shift && !closing && <RequestFlow active={active} setActive={(r) => { setActive(r); reload(); }} />}
+        {!online && (offlineReady
+          ? <div className="banner mt"><span className="grow small"><b>No connection: offline mode.</b> Approvals are checked on this terminal and synced when the connection returns.
+              {' '}{queued} sale(s) waiting · limits {money(pack!.limits.per_employee_minor)} per employee, {money(pack!.limits.terminal_minor)} per terminal · offline data from {when(pack!.generated_at)}</span></div>
+          : <div className="banner bad mt"><span className="grow small"><b>No connection.</b> This terminal has no valid offline data, so it can’t approve fuelings. Reconnect once to download it.</span></div>)}
+        {online && queued > 0 && <div className="banner mt"><span className="grow small">Syncing {queued} offline sale(s)…</span></div>}
+        {syncNote && <div className="banner ok mt"><span className="grow small">{syncNote}</span><button className="ghost sm" onClick={() => setSyncNote(null)}>✕</button></div>}
+        {!shift && !closing && <div className="banner mt">Open your named shift to start taking redemption requests{online ? '' : ' (needs a connection)'}.</div>}
+        {shift && !closing && (online || offlineReady || active) && (
+          <RequestFlow active={active} mode={mode} pack={pack} shiftId={shift.id} setActive={(r) => { setActive(r); reload(); }} />
+        )}
         {closing && <CloseShift onBack={() => setClosing(false)} onClosed={() => { reload(); }} />}
         {shift && !closing && (
           <div className="card white mt">
             <h3>This shift</h3>
             <table className="mt"><tbody>
-              {data?.redemptions.map((r: any) => (
+              {pendingSales.map((q) => (
+                <tr key={q.clientId}><td className="small">{when(q.completedAt)}</td><td>Pump {q.pump}</td><td>{cap(q.grade)}</td>
+                  <td className="r num">{money(q.chargedMinor, q.currency)}</td><td className="r num small muted">{gal(q.dispensedMgal, 2)} gal</td>
+                  <td>—</td><td className="r"><span className="badge warn">Offline · not synced</span></td></tr>
+              ))}
+              {data?.redemptions?.map((r: any) => (
                 <tr key={r.id}><td className="small">{when(r.created_at)}</td><td>Pump {r.pump}</td><td>{cap(r.grade)}</td>
                   <td className="r num">{r.charged_minor != null ? money(r.charged_minor) : r.requested_minor != null ? money(r.requested_minor) : `${gal(r.requested_mgal, 1)} gal`}</td>
-                  <td className="r num small muted">{r.dispensed_mgal != null ? `${gal(r.dispensed_mgal, 2)} gal` : ''}</td><td>{r.employee_name ?? '—'}</td><td className="r"><Status s={r.status} /></td></tr>
+                  <td className="r num small muted">{r.dispensed_mgal != null ? `${gal(r.dispensed_mgal, 2)} gal` : ''}</td><td>{r.employee_name ?? '—'}</td>
+                  <td className="r">{r.offline ? <span className="badge info" style={{ marginRight: 6 }}>Offline</span> : null}<Status s={r.status} /></td></tr>
               ))}
             </tbody></table>
-            {!data?.redemptions.length && <Empty>No requests yet this shift.</Empty>}
+            {!data?.redemptions?.length && !pendingSales.length && <Empty>No requests yet this shift.</Empty>}
           </div>
         )}
       </div>
@@ -113,10 +197,10 @@ function Terminal() {
   );
 }
 
-function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) => void }) {
+function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { active: any; setActive: (r: any) => void; mode: 'online' | 'offline'; pack: OfflinePack | null; shiftId: number }) {
   const [grade, setGrade] = useState('diesel');
   const [pump, setPump] = useState('1');
-  const [mode, setMode] = useState<'amount' | 'gallons'>('amount');
+  const [qtyMode, setQtyMode] = useState<'amount' | 'gallons'>('amount');
   const [qty, setQty] = useState('');
   const [dispMode, setDispMode] = useState<'amount' | 'gallons'>('amount');
   const [dispensed, setDispensed] = useState('');
@@ -128,10 +212,13 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
   }, [active?.challenge]);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
-  const rotateLeft = active?.nonce_at ? Math.max(0, 30 - (now - Date.parse(active.nonce_at.replace(' ', 'T') + 'Z')) / 1000) : 0;
+  const nonceAt = active?.nonce_at ? Date.parse(active.nonce_at.includes('T') ? active.nonce_at : active.nonce_at.replace(' ', 'T') + 'Z') : 0;
+  const rotateLeft = nonceAt ? Math.max(0, 30 - (now - nonceAt) / 1000) : 0;
+  const local = isLocal(active);
 
+  // Offline requests are handled entirely on this terminal; online ones by the server.
   const authorize = async (token: string) => {
-    const r = await run(() => s.post(`/api/redemptions/${active.id}/authorize`, { token }), 'Approved by employee');
+    const r = await run(() => (local ? authorizeLocal(pack!, active, token) : s.post(`/api/redemptions/${active.id}/authorize`, { token })), 'Approved by employee');
     if (r) setActive(r);
   };
   useEffect(() => {
@@ -143,12 +230,17 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
   }, [active?.status]);
 
   const create = async () => {
-    const r = await run(() => s.post('/api/redemptions', { grade, pump: Number(pump), [mode]: Number(qty) }));
+    const input = { grade, pump: Number(pump), [qtyMode]: Number(qty) };
+    const r = await run(async () => (connection === 'offline' ? createLocalRequest(pack!, shiftId, input) : s.post('/api/redemptions', input)));
     if (r) setActive(r);
   };
-  const cancel = async () => { const r = await run(() => s.post(`/api/redemptions/${active.id}/cancel`), 'Request cancelled'); if (r) setActive(null); };
+  const cancel = async () => {
+    const r = await run(async () => (local ? cancelLocal(active) : s.post(`/api/redemptions/${active.id}/cancel`)), 'Request cancelled');
+    if (r) setActive(null);
+  };
   const complete = async () => {
-    const r = await run(() => s.post(`/api/redemptions/${active.id}/complete`, { [dispMode]: Number(dispensed) }), 'Sale confirmed');
+    const q = { [dispMode]: Number(dispensed) };
+    const r = await run(async () => (local ? completeLocal(active, q) : s.post(`/api/redemptions/${active.id}/complete`, q)), local ? 'Sale saved; it syncs when the connection returns' : 'Sale confirmed');
     if (r) setActive(r);
   };
   const requested = (r: any) => (r.requested_minor != null ? money(r.requested_minor) : `${gal(r.requested_mgal, 1)} gal`);
@@ -166,14 +258,14 @@ function RequestFlow({ active, setActive }: { active: any; setActive: (r: any) =
             </div>
             <div className="small muted mt">Customer asks for</div>
             <div className="seg" style={{ marginTop: 6 }}>
-              <button className={mode === 'amount' ? 'on' : ''} onClick={() => setMode('amount')}>An amount (HTG)</button>
-              <button className={mode === 'gallons' ? 'on' : ''} onClick={() => setMode('gallons')}>Gallons</button>
+              <button className={qtyMode === 'amount' ? 'on' : ''} onClick={() => setQtyMode('amount')}>An amount (HTG)</button>
+              <button className={qtyMode === 'gallons' ? 'on' : ''} onClick={() => setQtyMode('gallons')}>Gallons</button>
             </div>
             <div className="grid g2 mt">
               <label>Pump<input type="number" min="1" value={pump} onChange={(e) => setPump(e.target.value)} /></label>
-              <label>{mode === 'amount' ? 'Amount (HTG)' : 'Quantity (gal)'}
-                <input type="number" step={mode === 'amount' ? '1' : '0.1'} min="0" value={qty} onChange={(e) => setQty(e.target.value)}
-                  placeholder={mode === 'amount' ? '2000' : '12.0'} style={{ fontSize: 22, fontWeight: 700 }} /></label>
+              <label>{qtyMode === 'amount' ? 'Amount (HTG)' : 'Quantity (gal)'}
+                <input type="number" step={qtyMode === 'amount' ? '1' : '0.1'} min="0" value={qty} onChange={(e) => setQty(e.target.value)}
+                  placeholder={qtyMode === 'amount' ? '2000' : '12.0'} style={{ fontSize: 22, fontWeight: 700 }} /></label>
             </div>
             <p className="small muted mt">The employee’s company contract price is applied when they approve.</p>
             <button className="block mt" disabled={busy || !(Number(qty) > 0) || !(Number(pump) > 0)} onClick={create}>Create request</button>

@@ -1,7 +1,7 @@
 import { generateKeyPairSync, pbkdf2Sync, randomBytes, sign, type KeyObject } from 'node:crypto';
 import type { Actor } from './auth.js';
 import type { Ctx } from './context.js';
-import { decodeChallenge, encodeResponse, pinProof, PIN_KDF, tokenMessage } from './offline.js';
+import { decodeChallenge, encodeResponse, offlineProof, offlineVerifier, pinProof, PIN_KDF, tokenMessage } from './offline.js';
 import { enrollDevice } from './services/admin.js';
 import { valueOf } from './units.js';
 
@@ -52,6 +52,7 @@ export class SimulatedPhone {
     return encodeResponse({
       ...base,
       h: pinProof(this.pinKey(pin), message).toString('base64url'),
+      o: offlineProof(offlineVerifier(this.pinKey(pin)), message).toString('base64url'),
       s: sign('sha256', Buffer.from(message), { key: this.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url'),
     });
   }
