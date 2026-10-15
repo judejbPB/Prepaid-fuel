@@ -188,6 +188,14 @@ On first boot with an empty database the server creates the distributor admin fr
 from the control center. Put it behind HTTPS (e.g. a reverse proxy or your host's TLS) and back up the
 `/data` volume. Do **not** run `npm run seed` in production: it wipes the database and loads demo data.
 
+## Languages
+The apps are in **French by default**, with English available from the FR | EN switch on every sign-in
+screen and app header (the choice is remembered on the device). UI text is written in English in the code
+and wrapped in `t('…')` (`web/src/i18n.ts`); the French lives in `web/src/i18n/fr/*.ts`, keyed by the English
+text. `npm test` runs `scripts/check-i18n.mjs`, which fails if any `t()` text has no French. Amounts and dates
+use French formatting (1 500,00 HTG, 15 oct.). The API answers error messages in the language the app sends
+in the `x-lang` header (`server/src/i18n.ts`), French when it is missing.
+
 ## Hosted demo (Vercel)
 `scripts/build-vercel.mjs` builds the web app plus one serverless function for the API, seeded with demo data.
 Serverless instances start and stop on their own, so connect a **Vercel Blob** store to the project

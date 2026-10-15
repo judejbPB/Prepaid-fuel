@@ -296,7 +296,13 @@ function translate(message: string, exact: Record<string, string>, rules: Rule[]
 /** Translates an API error message. Unknown messages are returned unchanged (English). */
 export function localize(message: string, lang: Lang): string {
   if (lang === 'en' || typeof message !== 'string') return message;
-  return translate(message, EXACT, RULES) ?? message;
+  return frenchNumbers(translate(message, EXACT, RULES) ?? message);
+}
+
+/** English-formatted amounts in a French message ("2,000.00 HTG", "3.5 gal") become "2 000,00 HTG", "3,5 gal". */
+export function frenchNumbers(text: string): string {
+  return text.replace(/\b(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?=\s?(?:HTG|gal)\b)/g, (_m, int: string, dec?: string) =>
+    int.replace(/,/g, '\u202f') + (dec ? `,${dec}` : ''));
 }
 
 // ----------------------------------------------------------------------------- validation (zod) messages
