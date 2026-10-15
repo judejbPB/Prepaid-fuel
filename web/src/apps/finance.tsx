@@ -6,7 +6,7 @@ import { t } from '../i18n';
 const d = api('distributor');
 
 const SAMPLE = `Date,Reference,Description,Amount
-2026-10-12,UNIBANK-90001,"Virement Company B TR-4823",2000000.00
+2026-10-12,UNIBANK-90001,"Virement Entreprise B TR-4823",2000000.00
 2026-10-12,UNIBANK-90002,Bank charges,-150.00`;
 
 export function BankStatements() {

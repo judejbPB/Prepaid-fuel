@@ -70,7 +70,7 @@ function Overview() {
             {data.lots.map((l: any) => (
               <tr key={l.id}><td className="mono">{l.code}</td><td className="r num">{money(l.amount_minor, l.currency)}</td>
                 <td className="r num">{money(l.unallocated_minor, l.currency)}</td><td>{date(l.expires_on)} {l.status !== 'active' && <Status s={l.status} />}</td>
-                <td className="r">{me.role === 'co_approver' && l.status === 'active' && l.unallocated_minor > 0 && <button className="sm ghost" onClick={() => setRefunding(l)}>{t('Refund')}</button>}</td></tr>
+                <td className="r">{me.role === 'co_approver' && l.status === 'active' && l.unallocated_minor > 0 && <button className="sm ghost" onClick={() => setRefunding(l)}>{t('Request refund')}</button>}</td></tr>
             ))}
           </tbody></table>
           {!data.lots.length && <Empty>{t('Lots appear once your deposit is verified and activated.')}</Empty>}

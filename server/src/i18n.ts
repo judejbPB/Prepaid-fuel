@@ -48,7 +48,7 @@ const STATUS: Record<string, [string, string]> = {
   resolved: ['résolu', 'résolue'],
   ready: ['prêt', 'prête'],
   held: ['retenu', 'retenue'],
-  closed: ['fermé', 'fermée'],
+  closed: ['clôturé', 'clôturée'],
   accepted: ['accepté', 'acceptée'],
   paused: ['suspendu', 'suspendue'],
 };
@@ -65,7 +65,7 @@ const ROLE: Record<string, string> = {
   dist_approver: 'approbateur du distributeur',
   co_preparer: 'préparateur de l’entreprise',
   co_approver: 'approbateur de l’entreprise',
-  st_manager: 'gérant de station-service',
+  st_manager: 'gérant de station',
   st_attendant: 'pompiste',
   employee: 'employé',
 };
@@ -80,13 +80,13 @@ const NOUN: Record<string, string> = {
   'Activation code': 'Code d’activation',
   Employee: 'Employé',
   'Bank line': 'Ligne bancaire',
-  Redemption: 'Transaction de carburant',
+  Redemption: 'Transaction carburant',
   Exception: 'Exception',
   Company: 'Entreprise',
   'Funding request': 'Demande de financement',
   company: 'Entreprise',
   employee: 'Employé',
-  station: 'Station-service',
+  station: 'Station',
   terminal: 'Terminal',
   lot: 'Lot',
 };
@@ -102,7 +102,7 @@ const SUBJECT: Record<string, [string, Gender]> = {
   Exception: ['L’exception', 'f'],
   company: ['L’entreprise', 'f'],
   employee: ['L’employé', 'm'],
-  station: ['La station-service', 'f'],
+  station: ['La station', 'f'],
   terminal: ['Le terminal', 'm'],
   lot: ['Le lot', 'm'],
 };
@@ -112,42 +112,42 @@ const SUBJECT: Record<string, [string, Gender]> = {
 const EXACT: Record<string, string> = {
   // errors.ts defaults, app.ts
   'Not allowed': 'Action non autorisée',
-  'A record with these details already exists': 'Un enregistrement avec ces informations existe déjà',
+  'A record with these details already exists': 'Un enregistrement identique existe déjà',
   'Unexpected error': 'Erreur inattendue. Veuillez réessayer.',
   'No such endpoint': 'Ressource introuvable',
   'The demo server was busy and nothing was saved. Please try again.':
     'Le serveur de démonstration était occupé et rien n’a été enregistré. Veuillez réessayer.',
 
   // auth.ts
-  'Other company data is not accessible': 'Les données d’une autre entreprise ne sont pas accessibles',
+  'Other company data is not accessible': 'Vous n’avez pas accès aux données d’une autre entreprise',
   'Invalid login or password': 'Identifiant ou mot de passe invalide',
   'This device is not a registered terminal. Activate it with your station’s code, then sign in.':
-    'Cet appareil n’est pas un terminal enregistré. Activez-le avec le code de votre station-service, puis connectez-vous.',
+    'Cet appareil n’est pas un terminal enregistré. Activez-le avec le code d’activation de votre station, puis connectez-vous.',
   'This terminal is frozen': 'Ce terminal est gelé',
-  'No employee profile': 'Aucun profil d’employé',
+  'No employee profile': 'Aucun profil employé associé à ce compte',
   'Device id required': 'Identifiant de l’appareil requis',
   'This account is bound to another phone. Ask your company admin for recovery.':
-    'Ce compte est associé à un autre téléphone. Demandez une récupération à l’administrateur de votre entreprise.',
+    'Ce compte est associé à un autre téléphone. Demandez une récupération assistée à l’administrateur de votre entreprise.',
   'Sign in required': 'Veuillez vous connecter',
   'Session expired': 'Session expirée. Veuillez vous reconnecter.',
 
   // offline.ts
-  'This is not a BOUSOL approval code': 'Ce n’est pas un code d’approbation BOUSOL',
+  'This is not a BOUSOL approval code': 'Ce code n’est pas un code d’approbation BOUSOL',
   'Unreadable approval code': 'Code d’approbation illisible',
-  'Malformed approval code': 'Code d’approbation mal formé',
+  'Malformed approval code': 'Code d’approbation non valide',
   'Device key must be an EC P-256 public key': 'La clé de l’appareil doit être une clé publique EC P-256',
   'Invalid device public key': 'Clé publique de l’appareil invalide',
-  'Not a BOUSOL station code': 'Ce n’est pas un code de station-service BOUSOL',
+  'Not a BOUSOL station code': 'Ce code n’est pas un code de station BOUSOL',
 
   // ledger.ts
-  'Journal entry needs at least two non-zero lines': 'L’écriture comptable doit comporter au moins deux lignes non nulles',
-  'Entry to reverse not found': 'Écriture à contrepasser introuvable',
+  'Journal entry needs at least two non-zero lines': 'Une écriture doit comporter au moins deux lignes non nulles',
+  'Entry to reverse not found': 'Écriture à contre-passer introuvable',
   'Insufficient balance': 'Solde insuffisant',
 
   // refunds.ts
   'Amount must be positive': 'Le montant doit être positif',
   'Maker-checker: the approver cannot also record the payout':
-    'Vous ne pouvez pas enregistrer le paiement d’un remboursement que vous avez approuvé (double contrôle)',
+    'Double validation : vous ne pouvez pas enregistrer le versement d’un remboursement que vous avez approuvé.',
 
   // allocation.ts
   'Add at least one employee': 'Ajoutez au moins un employé',
@@ -155,87 +155,87 @@ const EXACT: Record<string, string> = {
   'Company is frozen': 'L’entreprise est gelée',
   'No lines are ready to post': 'Aucune ligne n’est prête à être comptabilisée',
   'Maker-checker: the preparer cannot approve their own batch':
-    'Vous ne pouvez pas approuver votre propre lot d’allocation (double contrôle)',
-  'Line is not held': 'Cette ligne n’est pas retenue',
+    'Double validation : vous ne pouvez pas approuver un lot d’allocation que vous avez préparé.',
+  'Line is not held': 'Cette ligne n’est pas retenue pour vérification',
   'Only a posted (approved) batch can become recurring':
-    'Seul un lot d’allocation comptabilisé (approuvé) peut devenir récurrent',
+    'Seul un lot d’allocation comptabilisé peut être rendu récurrent',
   'Day of month must be 1–28': 'Le jour du mois doit être compris entre 1 et 28',
 
   // admin.ts
   'Only diesel and gasoline are sold': 'Seuls le diesel et la gazoline sont vendus',
   'Price must be positive': 'Le prix doit être positif',
-  'Create employees through the employee roster': 'Créez les employés depuis la liste des employés',
-  'Company required': 'Entreprise requise',
-  'Station required': 'Station-service requise',
-  'Valid phone number required': 'Numéro de téléphone valide requis',
+  'Create employees through the employee roster': 'Créez les employés depuis l’écran Employés de l’entreprise',
+  'Company required': 'Veuillez sélectionner une entreprise',
+  'Station required': 'Veuillez sélectionner une station',
+  'Valid phone number required': 'Veuillez saisir un numéro de téléphone valide',
   'Password is incorrect': 'Mot de passe incorrect',
-  'Invalid PIN key': 'Clé de code PIN invalide',
-  'Enroll from the phone this wallet is bound to': 'Effectuez l’enregistrement depuis le téléphone associé à ce portefeuille',
+  'Invalid PIN key': 'Clé du code PIN invalide',
+  'Enroll from the phone this wallet is bound to': 'Effectuez l’inscription depuis le téléphone associé à ce portefeuille',
   'A phone is already enrolled. Ask your company admin for assisted recovery.':
-    'Un téléphone est déjà enregistré. Demandez une récupération assistée à l’administrateur de votre entreprise.',
+    'Un téléphone est déjà associé à ce compte. Demandez une récupération assistée à l’administrateur de votre entreprise.',
   'Cannot freeze that': 'Cet élément ne peut pas être gelé',
 
   // bank.ts
-  'Statement needs a header row and at least one line': 'Le relevé doit contenir une ligne d’en-tête et au moins une ligne',
+  'Statement needs a header row and at least one line': 'Le relevé doit contenir une ligne d’en-tête et au moins une ligne d’opération',
   'Statement needs at least "reference" and "amount" columns':
     'Le relevé doit contenir au moins les colonnes « reference » et « amount »',
 
   // redemption.ts
-  'Attendant must be signed in on a station terminal': 'Le pompiste doit être connecté sur un terminal de la station-service',
+  'Attendant must be signed in on a station terminal': 'Le pompiste doit être connecté sur un terminal de station',
   'Terminal is frozen': 'Le terminal est gelé',
-  'Station is frozen': 'La station-service est gelée',
-  'Another attendant has an open shift on this terminal': 'Un autre pompiste a un quart ouvert sur ce terminal',
+  'Station is frozen': 'La station est gelée',
+  'Another attendant has an open shift on this terminal': 'Un autre pompiste a déjà un quart ouvert sur ce terminal',
   'No open shift on this terminal': 'Aucun quart ouvert sur ce terminal',
-  'Only the shift attendant can close it': 'Seul le pompiste de ce quart peut le fermer',
+  'Only the shift attendant can close it': 'Seul le pompiste de ce quart peut le clôturer',
   'Complete or cancel open redemption requests before closing':
-    'Terminez ou annulez les demandes en cours avant de fermer le quart',
+    'Terminez ou annulez les demandes en cours avant de clôturer le quart',
   'Request belongs to another terminal': 'Cette demande appartient à un autre terminal',
   'Give either gallons or an amount': 'Indiquez soit un nombre de gallons, soit un montant',
   'Quantity must be positive': 'La quantité doit être positive',
   'Pump number required': 'Numéro de pompe requis',
   'Open your shift first': 'Ouvrez d’abord votre quart',
   'Wallet locked after too many wrong PINs': 'Portefeuille bloqué après trop de codes PIN incorrects',
-  'This approval was made for a different request': 'Cette approbation a été faite pour une autre demande',
+  'This approval was made for a different request': 'Cette approbation concerne une autre demande',
   'Approval code is too old. Ask the employee to scan the QR again.':
     'Le code d’approbation est trop ancien. Demandez à l’employé de scanner à nouveau le code QR.',
   'Approval code is not from this employee’s registered phone':
     'Le code d’approbation ne provient pas du téléphone enregistré de cet employé',
   'This approval code was already used': 'Ce code d’approbation a déjà été utilisé',
-  'This fuel wallet is frozen': 'Ce portefeuille de carburant est gelé',
+  'This fuel wallet is frozen': 'Ce portefeuille carburant est gelé',
   'This company’s program is frozen': 'Le programme de cette entreprise est gelé',
   'Wallet locked after too many wrong PINs. The company admin must do assisted recovery.':
     'Portefeuille bloqué après trop de codes PIN incorrects. L’administrateur de l’entreprise doit effectuer une récupération assistée.',
-  'Station is not accepting redemptions': 'La station-service n’accepte pas de transactions pour le moment',
+  'Station is not accepting redemptions': 'La station n’accepte pas de transactions pour le moment',
   'The price changed since the phone last synced. Connect the phone once and try again.':
-    'Le prix a changé depuis la dernière synchronisation du téléphone. Connectez le téléphone une fois, puis réessayez.',
-  'Request already used': 'Demande déjà utilisée',
-  'Cannot dispense more than the employee approved': 'Impossible de distribuer plus que ce que l’employé a approuvé',
-  'Not your request': 'Cette demande n’est pas la vôtre',
+    'Le prix a changé depuis la dernière synchronisation du téléphone. Connectez le téléphone à Internet, puis réessayez.',
+  'Request already used': 'Cette demande a déjà été utilisée',
+  'Cannot dispense more than the employee approved': 'Impossible de servir plus que ce que l’employé a approuvé',
+  'Not your request': 'Cette demande ne vous est pas attribuée',
 
   // station-offline.ts
   'Offline mode is only available on a registered station terminal':
-    'Le mode hors ligne n’est disponible que sur un terminal de station-service enregistré',
-  'This terminal or station is frozen': 'Ce terminal ou cette station-service est gelé',
-  'Invalid timestamp in offline sale': 'Horodatage invalide dans une vente hors ligne',
+    'Le mode hors ligne n’est disponible que sur un terminal de station enregistré',
+  'This terminal or station is frozen': 'Ce terminal ou cette station est gelé(e)',
+  'Invalid timestamp in offline sale': 'Horodatage invalide pour une vente hors ligne',
 
   // exceptions.ts
   'Only completed fuelings can be disputed': 'Seuls les ravitaillements terminés peuvent être contestés',
   'A dispute is already open for this fueling': 'Une contestation est déjà ouverte pour ce ravitaillement',
-  'Variance can only be explained and accepted': 'Un écart peut seulement être expliqué et accepté',
-  'Reversal must be within the amount charged': 'Le montant à rembourser ne peut pas dépasser le montant facturé',
-  'Disputes are reversed or rejected': 'Une contestation est soit remboursée, soit rejetée',
-  'Offline exceptions are acknowledged with a note': 'Les exceptions hors ligne sont validées avec une note',
-  'Adjustments are proposed at creation': 'Les ajustements sont proposés lors de leur création',
+  'Variance can only be explained and accepted': 'Un écart ne peut être que justifié puis accepté',
+  'Reversal must be within the amount charged': 'Le montant contre-passé ne peut pas dépasser le montant débité',
+  'Disputes are reversed or rejected': 'Une contestation se règle par une contre-passation ou un rejet',
+  'Offline exceptions are acknowledged with a note': 'Une exception hors ligne se clôt par une prise d’acte, avec une note',
+  'Adjustments are proposed at creation': 'Un ajustement est proposé dès sa création',
   'Nothing proposed yet': 'Aucune proposition pour le moment',
   'Maker-checker: the proposer cannot approve their own proposal':
-    'Vous ne pouvez pas approuver votre propre proposition (double contrôle)',
-  'Reversal exceeds the amount charged': 'Le remboursement dépasse le montant facturé',
+    'Double validation : vous ne pouvez pas approuver votre propre proposition.',
+  'Reversal exceeds the amount charged': 'La contre-passation dépasse le montant débité',
 
   // funding.ts
   'Imported bank line amount differs from the expected amount':
-    'Le montant de la ligne bancaire importée diffère du montant attendu',
+    'Le montant de la ligne bancaire importée ne correspond pas au montant attendu',
   'Maker-checker: the person who matched the deposit cannot activate it':
-    'Vous ne pouvez pas activer un dépôt que vous avez vous-même rapproché (double contrôle)',
+    'Double validation : vous ne pouvez pas activer un dépôt que vous avez rapproché.',
 };
 
 type Rule = [RegExp, (...groups: string[]) => string];
@@ -245,7 +245,7 @@ const RULES: Rule[] = [
   // auth.ts
   [/^Requires role: (.+)$/, (roles) => `Rôle requis : ${roles.split(' or ').map((r) => ROLE[r] ?? r).join(' ou ')}`],
   [/^This terminal belongs to (.+)\. Sign in with an attendant account for (.+), or activate this device for your own station\.$/,
-    (s1, s2) => `Ce terminal appartient à ${s1}. Connectez-vous avec un compte pompiste de ${s2}, ou activez cet appareil pour votre propre station-service.`],
+    (s1, s2) => `Ce terminal appartient à ${s1}. Connectez-vous avec un compte pompiste de ${s2}, ou activez cet appareil pour votre propre station.`],
 
   // redemption.ts
   [/^Wrong PIN \((-?\d+) tries left\)\. Ask the employee to try again\.$/,
@@ -253,14 +253,14 @@ const RULES: Rule[] = [
   [/^Your company has no (\w+) price yet$/, (g) => `Votre entreprise n’a pas encore de prix pour ${gradeWithArticle(g)}`],
 
   // funding.ts
-  [/^No active (\w+) contract price for this company$/, (g) => `Aucun prix contractuel actif pour ${gradeWithArticle(g)} pour cette entreprise`],
+  [/^No active (\w+) contract price for this company$/, (g) => `Cette entreprise n’a pas de prix contractuel actif pour ${gradeWithArticle(g)}`],
   [/^Funding is (\w+); it must be matched first$/, (s) => `Le financement est ${status(s, 'm')} ; il doit d’abord être rapproché`],
-  [/^Bank amount (\S+) does not equal expected (\S+)$/, (a, b) => `Le montant bancaire ${a} ne correspond pas au montant attendu ${b}`],
-  [/^Bank reference already matched to (.+)$/, (ref) => `Référence bancaire déjà rapprochée de ${ref}`],
+  [/^Bank amount (\S+) does not equal expected (\S+)$/, (a, b) => `Le montant bancaire (${a}) ne correspond pas au montant attendu (${b})`],
+  [/^Bank reference already matched to (.+)$/, (ref) => `Cette référence bancaire est déjà rapprochée de ${ref}`],
   [/^Bank line (.+) is (\w+)$/, (ref, s) => `La ligne bancaire ${ref} est ${status(s, 'f')}`],
 
   // refunds.ts
-  [/^Only (\S+) (\S+) of (.+) is unallocated$/, (amt, ccy, lot) => `Seuls ${amt} ${ccy} du lot ${lot} ne sont pas encore alloués`],
+  [/^Only (\S+) (\S+) of (.+) is unallocated$/, (amt, ccy, lot) => `Le solde non alloué du lot ${lot} n’est que de ${amt} ${ccy}`],
 
   // allocation.ts
   [/^Employee (.+) not in company$/, (id) => `L’employé ${id} n’appartient pas à cette entreprise`],
@@ -320,7 +320,7 @@ const ZOD_TYPE: Record<string, string> = {
 };
 const zt = (t: string) => ZOD_TYPE[t] ?? t;
 const ZOD_RULES: Rule[] = [
-  [/^Expected (\w+), received (\w+)$/, (a, b) => `${zt(a)} attendu, ${zt(b)} reçu`],
+  [/^Expected (\w+), received (\w+)$/, (a, b) => `Type attendu : ${zt(a)}, reçu : ${zt(b)}`],
   [/^String must contain at least (\d+) character\(s\)$/, (n) => `Doit contenir au moins ${n} caractère(s)`],
   [/^String must contain at most (\d+) character\(s\)$/, (n) => `Doit contenir au plus ${n} caractère(s)`],
   [/^String must contain exactly (\d+) character\(s\)$/, (n) => `Doit contenir exactement ${n} caractère(s)`],
@@ -331,7 +331,7 @@ const ZOD_RULES: Rule[] = [
   [/^Number must be less than or equal to (\S+)$/, (n) => `Doit être inférieur ou égal à ${n}`],
   [/^Number must be less than (\S+)$/, (n) => `Doit être inférieur à ${n}`],
   [/^Invalid enum value\. Expected (.+), received (.+)$/, (a, b) => `Valeur invalide. Attendu : ${a.replace(/ \| /g, ' ou ')}, reçu : ${b}`],
-  [/^Invalid discriminator value\. Expected (.+)$/, (a) => `Valeur de discriminant invalide. Attendu : ${a.replace(/ \| /g, ' ou ')}`],
+  [/^Invalid discriminator value\. Expected (.+)$/, (a) => `Type invalide. Attendu : ${a.replace(/ \| /g, ' ou ')}`],
 ];
 
 /** Translates one zod issue message. */
@@ -360,7 +360,7 @@ const SUMMARY_RULES: Rule[] = [
   [/^(.+): offline sale of (\S+ \S+) rejected at sync \((.+)\)$/,
     (st, amt, reason) => `${st} : vente hors ligne de ${amt} rejetée à la synchronisation (${OFFLINE_REASON[reason] ?? reason})`],
   [/^(.+): offline sale to (.+) not covered by (\S+ \S+)$/,
-    (st, name, amt) => `${st} : vente hors ligne à ${name} non couverte à hauteur de ${amt}`],
+    (st, name, amt) => `${st} : vente hors ligne à ${name}, solde insuffisant de ${amt}`],
   [/^(.+) shift close: (.+) variance awaiting explanation$/,
     (st, parts) => `${st}, fermeture de quart : écart de ${parts} en attente d’explication`],
   [/^Dispute on (\S+ \S+) \((\S+) gal (\w+)\) at (.+) pump (\d+)$/,

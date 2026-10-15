@@ -6,6 +6,7 @@ import { authenticate, DISTRIBUTOR, login, logout, requireRole, type Actor } fro
 import type { Ctx } from './context.js';
 import { AppError } from './errors.js';
 import { localize, localizePayload, localizeValidation, requestLang } from './i18n.js';
+import { localizeLedgerPayload } from './i18n-ledger.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
@@ -46,7 +47,10 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
   });
 
   // Server-generated text returned as data (offline-sync rejection reasons, exception summaries).
-  app.addHook('preSerialization', async (req, _reply, payload) => localizePayload(payload, requestLang(req.headers)));
+  app.addHook('preSerialization', async (req, _reply, payload) => {
+    const lang = requestLang(req.headers);
+    return localizeLedgerPayload(localizePayload(payload, lang), lang);
+  });
 
   const bearer = (req: FastifyRequest) => req.headers.authorization?.replace(/^Bearer\s+/i, '');
   const auth = async (req: FastifyRequest) => {

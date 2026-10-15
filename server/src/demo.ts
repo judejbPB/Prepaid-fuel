@@ -38,7 +38,7 @@ export function seedDemo(ctx: Ctx) {
   const managers = stations.map((s, i) => user(`Manager Station ${i + 1}`, `manager${i + 1}@bousol`, 'st_manager', { stationId: s.id }));
 
   // Corporate clients. Balances are in HTG; contract prices per gallon convert to reference gallons.
-  const companies = ['Company A', 'Company B', 'Company C'].map((name) => {
+  const companies = ['Entreprise A', 'Entreprise B', 'Entreprise C'].map((name) => {
     const c = admin.createCompany(ctx, null, { name, approvalThreshold: 200_000 });
     admin.setContractPrice(ctx, null, { companyId: c.id, grade: 'diesel', priceMinor: 66500 });
     admin.setContractPrice(ctx, null, { companyId: c.id, grade: 'gasoline', priceMinor: 57000 });
@@ -50,18 +50,18 @@ export function seedDemo(ctx: Ctx) {
   user('Admin B', 'prep@companyb', 'co_preparer', { companyId: coB.id });
   user('Finance B', 'approve@companyb', 'co_approver', { companyId: coB.id });
 
-  // Employees of Company A
+  // Employees of Entreprise A
   const roster: [string, string, string][] = [
-    ['Jean P.', 'Ops', '50937000001'], ['Marie L.', 'Sales', '50937000002'], ['Paul D.', 'Ops', '50937000003'],
-    ['Sophie R.', 'Finance', '50937000004'], ['Claude M.', 'Ops', '50937000005'], ['Esther B.', 'Logistics', '50937000006'],
-    ['Wilson T.', 'Logistics', '50937000007'], ['Rose-Marie F.', 'Sales', '50937000008'],
+    ['Jean P.', 'Opérations', '50937000001'], ['Marie L.', 'Ventes', '50937000002'], ['Paul D.', 'Opérations', '50937000003'],
+    ['Sophie R.', 'Finance', '50937000004'], ['Claude M.', 'Opérations', '50937000005'], ['Esther B.', 'Logistique', '50937000006'],
+    ['Wilson T.', 'Logistique', '50937000007'], ['Rose-Marie F.', 'Ventes', '50937000008'],
   ];
   const employees = roster.map(([name, dept, phone]) =>
     admin.createEmployee(ctx, null, { companyId: coA.id, name, dept, phone, password: DEMO_PASSWORD }));
   // A second roster record reusing Sophie's phone: allocation batches hold it for review.
   const dup = admin.createEmployee(ctx, null, { companyId: coA.id, name: 'S. Rousseau', dept: 'Finance', phone: '50937000004', password: DEMO_PASSWORD });
 
-  // Funding (HTG): Company A has two activated lots; B awaits the bank; C is matched and needs the second approver.
+  // Funding (HTG): Entreprise A has two activated lots; B awaits the bank; C is matched and needs the second approver.
   const fund = (companyId: number, htg: number) =>
     funding.createFunding(ctx, as(distAdmin.id), { companyId, amountMinor: htg * 100 });
   const a1 = fund(coA.id, 2_500_000);
@@ -76,7 +76,7 @@ export function seedDemo(ctx: Ctx) {
 
   // A posted allocation (approved by a second person) that also became the recurring monthly benefit.
   const posted = alloc.createBatch(ctx, as(prepA.id), {
-    companyId: coA.id, title: 'Monthly fuel benefit',
+    companyId: coA.id, title: 'Allocation carburant mensuelle',
     lines: employees.map((e, i) => ({ employeeId: e.id, amount: i === 0 ? 80_000 : 40_000 })),
   });
   alloc.submitBatch(ctx, as(prepA.id), posted.id);
@@ -85,7 +85,7 @@ export function seedDemo(ctx: Ctx) {
 
   // Draft batch waiting to be sent for approval, with the duplicate-phone record held.
   alloc.createBatch(ctx, as(prepA.id), {
-    companyId: coA.id, title: 'Field trip top-up',
+    companyId: coA.id, title: 'Complément mission terrain',
     lines: [
       { employeeId: employees[0].id, amount: 20_000 },
       { employeeId: employees[1].id, amount: 20_000 },

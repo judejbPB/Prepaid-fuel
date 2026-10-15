@@ -1,3 +1,4 @@
+import { auditAction, auditDetails, auditEntity } from '../auditLabels';
 import { useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import { api, cap, date, gal, money, when } from '../api';
@@ -450,8 +451,9 @@ function Audit() {
           <thead><tr><th>{t('When')}</th><th>{t('Who')}</th><th>{t('Action')}</th><th>{t('Entity')}</th><th>{t('Details')}</th></tr></thead>
           <tbody>
             {data?.map((a: any) => (
-              <tr key={a.id}><td className="small">{when(a.at)}</td><td>{a.actor_name ?? t('System')}</td><td className="mono">{a.action}</td>
-                <td className="small">{a.entity} #{a.entity_id}</td><td className="small mono" style={{ maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.data_json}</td></tr>
+              <tr key={a.id}><td className="small">{when(a.at)}</td><td>{a.actor_name ?? t('System')}</td><td>{auditAction(a.action)}</td>
+                <td className="small">{auditEntity(a.entity)}{a.entity_id != null ? ` #${a.entity_id}` : ''}</td>
+                <td className="small" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={auditDetails(a.data_json)}>{auditDetails(a.data_json)}</td></tr>
             ))}
           </tbody>
         </table>
