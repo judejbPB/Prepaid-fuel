@@ -1,5 +1,8 @@
 apply plugin: 'com.android.application'
 
+// CI passes the run number so each test build installs over the previous one.
+def ciBuildNumber = (System.getenv("VERSION_CODE") ?: "1").toInteger()
+
 android {
     namespace = "ht.bousol.fuel"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,9 +10,8 @@ android {
         applicationId "ht.bousol.fuel"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // CI passes the run number so each test build installs over the previous one.
-        versionCode (System.getenv("VERSION_CODE") ?: "1").toInteger()
-        versionName "0.1." + (System.getenv("VERSION_CODE") ?: "0")
+        versionCode = ciBuildNumber
+        versionName = "0.1.${ciBuildNumber}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
