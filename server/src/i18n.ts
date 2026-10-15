@@ -81,6 +81,7 @@ const NOUN: Record<string, string> = {
   Employee: 'Employé',
   'Bank line': 'Ligne bancaire',
   'Sage export': 'Export Sage',
+  Alert: 'Alerte',
   Redemption: 'Transaction carburant',
   Exception: 'Exception',
   Company: 'Entreprise',
@@ -190,6 +191,9 @@ const EXACT: Record<string, string> = {
     'Le service d’IA n’a pas pu lire ce relevé. Réessayez, ou exportez-le de la banque en Excel ou en CSV.',
   'This file is not a PDF': 'Ce fichier n’est pas un PDF',
   'This statement is too long for AI reading. Split it by month and try again.': 'Ce relevé est trop long pour la lecture par IA. Découpez-le par mois et réessayez.',
+
+  // fuel-alerts.ts
+  'This alert has already been reviewed': 'Cette alerte a déjà été examinée',
 
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
