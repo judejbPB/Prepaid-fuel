@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { createCtx, type Ctx } from './context.js';
+import { localize, requestLang } from './i18n.js';
 
 export interface SnapshotStore {
   /** Current version tag, or null when no snapshot exists yet. */
@@ -142,6 +143,7 @@ export function attachDemoPersistence(app: FastifyInstance, demo: PersistentDemo
     if (demo.currentVersion) reply.header(DEMO_VERSION_HEADER, demo.currentVersion);
     if (saved) return payload;
     reply.code(503).header('content-type', 'application/json; charset=utf-8');
-    return JSON.stringify({ error: 'busy', message: 'The demo server was busy and nothing was saved. Please try again.' });
+    const message = localize('The demo server was busy and nothing was saved. Please try again.', requestLang(req.headers));
+    return JSON.stringify({ error: 'busy', message });
   });
 }

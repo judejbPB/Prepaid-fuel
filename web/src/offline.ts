@@ -10,6 +10,8 @@
  * a counter that never repeats.
  */
 
+import { t } from './i18n';
+
 export const CHALLENGE_PREFIX = 'BSL1C.';
 export const RESPONSE_PREFIX = 'BSL1R.';
 const PIN_KDF = { hash: 'SHA-256', iterations: 150_000, bits: 256 };
@@ -50,7 +52,7 @@ export const fromB64url = (s: string) => {
 
 export function decodeChallenge(raw: string): Challenge {
   const s = raw.trim();
-  if (!s.startsWith(CHALLENGE_PREFIX)) throw new Error('This is not a BOUSOL station code');
+  if (!s.startsWith(CHALLENGE_PREFIX)) throw new Error(t('This is not a BOUSOL station code'));
   return JSON.parse(new TextDecoder().decode(fromB64url(s.slice(CHALLENGE_PREFIX.length))));
 }
 
@@ -123,7 +125,7 @@ export function maxAmount(ch: Challenge, prices: { grade: string; price_minor: n
 /** Produces the approval code shown as a QR. Works with no network. */
 export async function approveChallenge(employeeId: number, challenge: Challenge, max: number, pin: string): Promise<string> {
   const rec = await getRecord(employeeId);
-  if (!rec) throw new Error('This phone is not enrolled');
+  if (!rec) throw new Error(t('This phone is not enrolled'));
   // Persist the counter before signing so a code can never be produced twice with the same counter.
   rec.counter += 1;
   await putRecord(rec);

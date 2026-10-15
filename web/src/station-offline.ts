@@ -6,6 +6,8 @@
  * challenges itself, verifies the phone's approval code locally, enforces the limits, and queues each
  * completed sale. The queue survives reloads and is synced as soon as the connection returns.
  */
+import { cap } from './api';
+import { t } from './i18n';
 import { CHALLENGE_PREFIX, fromB64url, RESPONSE_PREFIX, toB64url, tokenMessage } from './offline';
 
 export interface PackEmployee {
@@ -102,11 +104,11 @@ const encodeChallenge = (r: LocalRequest) =>
 // ------------------------------------------------------------------ requests
 
 export function createLocalRequest(pack: OfflinePack, shiftId: number, input: { grade: string; pump: number; amount?: number; gallons?: number }): LocalRequest {
-  if (!packUsable(pack)) throw new OfflineError('The offline pack has expired. Reconnect to refresh it.');
-  if (!['diesel', 'gasoline'].includes(input.grade)) throw new OfflineError('Only diesel and gasoline are sold');
+  if (!packUsable(pack)) throw new OfflineError(t('The offline pack has expired. Reconnect to refresh it.'));
+  if (!['diesel', 'gasoline'].includes(input.grade)) throw new OfflineError(t('Only diesel and gasoline are sold'));
   const minor = input.amount != null ? Math.round(input.amount * 100) : null;
   const mgal = input.gallons != null ? Math.round(input.gallons * 1000) : null;
-  if ((minor ?? mgal ?? 0) <= 0) throw new OfflineError('Quantity must be positive');
+  if ((minor ?? mgal ?? 0) <= 0) throw new OfflineError(t('Quantity must be positive'));
   const r: LocalRequest = {
     id: `local-${randomHex(8)}`, local: true,
     code: `OF${pack.terminal_id}-${randomHex(4).toUpperCase()}`,
@@ -150,42 +152,42 @@ const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.e
  * offline limits. On success the amount is held against the limits until the sale is confirmed.
  */
 export async function authorizeLocal(pack: OfflinePack, r: LocalRequest, raw: string): Promise<LocalRequest> {
-  if (!packUsable(pack)) throw new OfflineError('The offline pack has expired. Reconnect to refresh it.');
-  if (r.status !== 'pending' || Date.parse(r.expires_at) < Date.now()) throw new OfflineError('This request is no longer open');
-  if (!raw.startsWith(RESPONSE_PREFIX)) throw new OfflineError('This is not a BOUSOL approval code');
-  let t: any;
-  try { t = JSON.parse(new TextDecoder().decode(fromB64url(raw.slice(RESPONSE_PREFIX.length)))); } catch { throw new OfflineError('Unreadable approval code'); }
-  if (t.c !== r.code) throw new OfflineError('This approval was made for a different request');
-  const freshPrev = t.n === r.prev_nonce && Date.now() - Date.parse(r.nonce_at) < pack.limits.challenge_rotate_seconds * 1000;
-  if (t.n !== r.nonce && !freshPrev) throw new OfflineError('Approval code is too old. Ask the employee to scan the QR again.');
+  if (!packUsable(pack)) throw new OfflineError(t('The offline pack has expired. Reconnect to refresh it.'));
+  if (r.status !== 'pending' || Date.parse(r.expires_at) < Date.now()) throw new OfflineError(t('This request is no longer open'));
+  if (!raw.startsWith(RESPONSE_PREFIX)) throw new OfflineError(t('This is not a BOUSOL approval code'));
+  let tok: any;
+  try { tok = JSON.parse(new TextDecoder().decode(fromB64url(raw.slice(RESPONSE_PREFIX.length)))); } catch { throw new OfflineError(t('Unreadable approval code')); }
+  if (tok.c !== r.code) throw new OfflineError(t('This approval was made for a different request'));
+  const freshPrev = tok.n === r.prev_nonce && Date.now() - Date.parse(r.nonce_at) < pack.limits.challenge_rotate_seconds * 1000;
+  if (tok.n !== r.nonce && !freshPrev) throw new OfflineError(t('Approval code is too old. Ask the employee to scan the QR again.'));
 
-  const emp = pack.employees.find((e) => e.employee_id === t.e && e.key_id === t.k);
-  if (!emp) throw new OfflineError('This phone is not in the offline pack (new or recovered wallet). It can be used once the terminal is online.');
+  const emp = pack.employees.find((e) => e.employee_id === tok.e && e.key_id === tok.k);
+  if (!emp) throw new OfflineError(t('This phone is not in the offline pack (new or recovered wallet). It can be used once the terminal is online.'));
   const state = offlineStore.state();
   const failures = state.pinFailures[emp.employee_id] ?? 0;
-  if (failures >= pack.limits.max_pin_failures) throw new OfflineError('Wallet locked after too many wrong PINs');
-  if ((state.used[emp.key_id] ?? []).includes(t.t)) throw new OfflineError('This approval code was already used');
+  if (failures >= pack.limits.max_pin_failures) throw new OfflineError(t('Wallet locked after too many wrong PINs'));
+  if ((state.used[emp.key_id] ?? []).includes(tok.t)) throw new OfflineError(t('This approval code was already used'));
 
-  const message = new TextEncoder().encode(tokenMessage(t));
-  if (!(await verifySignature(emp.public_key_jwk, message, fromB64url(t.s)))) {
-    throw new OfflineError('Approval code is not from this employee’s registered phone');
+  const message = new TextEncoder().encode(tokenMessage(tok));
+  if (!(await verifySignature(emp.public_key_jwk, message, fromB64url(tok.s)))) {
+    throw new OfflineError(t('Approval code is not from this employee’s registered phone'));
   }
-  const used = { ...state.used, [emp.key_id]: [...(state.used[emp.key_id] ?? []), t.t] };
-  if (!sameBytes(await offlineProof(emp.verifier, message), fromB64url(t.o ?? ''))) {
+  const used = { ...state.used, [emp.key_id]: [...(state.used[emp.key_id] ?? []), tok.t] };
+  if (!sameBytes(await offlineProof(emp.verifier, message), fromB64url(tok.o ?? ''))) {
     write(KEYS.state, { ...state, used, pinFailures: { ...state.pinFailures, [emp.employee_id]: failures + 1 } });
     const left = pack.limits.max_pin_failures - failures - 1;
-    throw new OfflineError(left > 0 ? `Wrong PIN (${left} tries left). Ask the employee to try again.` : 'Wallet locked after too many wrong PINs');
+    throw new OfflineError(left > 0 ? t('Wrong PIN ({n} tries left). Ask the employee to try again.', { n: left }) : t('Wallet locked after too many wrong PINs'));
   }
 
   const price = pack.prices[emp.company_id]?.[r.grade];
-  if (!price) throw new OfflineError(`No ${r.grade} price for ${emp.company_name}`);
+  if (!price) throw new OfflineError(t('No {grade} price for {company}', { grade: cap(r.grade), company: emp.company_name }));
   const amount = r.requested_minor ?? Math.round((r.requested_mgal! * price.price_minor) / 1000);
   const gallons = r.requested_mgal ?? Math.floor((r.requested_minor! * 1000) / price.price_minor);
-  if (amount > t.m) throw new OfflineError('The price changed since the phone last synced. Connect the phone once and try again.');
+  if (amount > tok.m) throw new OfflineError(t('The price changed since the phone last synced. Connect the phone once and try again.'));
   const spent = state.spent[emp.employee_id] ?? 0;
-  if (amount > emp.available_minor - spent) throw new OfflineError('Balance too low for this amount');
-  if (spent + amount > pack.limits.per_employee_minor) throw new OfflineError('Over the offline limit for this employee. Wait for the connection to return.');
-  if (state.terminalTotal + amount > pack.limits.terminal_minor) throw new OfflineError('This terminal reached its offline limit. Wait for the connection to return.');
+  if (amount > emp.available_minor - spent) throw new OfflineError(t('Balance too low for this amount'));
+  if (spent + amount > pack.limits.per_employee_minor) throw new OfflineError(t('Over the offline limit for this employee. Wait for the connection to return.'));
+  if (state.terminalTotal + amount > pack.limits.terminal_minor) throw new OfflineError(t('This terminal reached its offline limit. Wait for the connection to return.'));
 
   write(KEYS.state, {
     spent: { ...state.spent, [emp.employee_id]: spent + amount },
@@ -211,7 +213,7 @@ function release(employeeId: number, amount: number) {
 
 /** Records what was dispensed and queues the sale for sync; any unused part is released. */
 export function completeLocal(r: LocalRequest, q: { amount?: number; gallons?: number }): LocalRequest {
-  if (r.status !== 'approved') throw new OfflineError('Request is not approved');
+  if (r.status !== 'approved') throw new OfflineError(t('Request is not approved'));
   const price = r.price_minor!;
   let charged: number;
   let mgal: number;
@@ -222,8 +224,8 @@ export function completeLocal(r: LocalRequest, q: { amount?: number; gallons?: n
     charged = Math.round((q.amount ?? 0) * 100);
     mgal = Math.floor((charged * 1000) / price);
   }
-  if (!(charged > 0)) throw new OfflineError('Use cancel if nothing was dispensed');
-  if (charged > r.approved_minor!) throw new OfflineError('Cannot dispense more than the employee approved');
+  if (!(charged > 0)) throw new OfflineError(t('Use cancel if nothing was dispensed'));
+  if (charged > r.approved_minor!) throw new OfflineError(t('Cannot dispense more than the employee approved'));
   release(r.employee_id!, r.approved_minor! - charged);
   const now = new Date().toISOString();
   const sale: OfflineSale = {
