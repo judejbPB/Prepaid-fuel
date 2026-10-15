@@ -45,7 +45,7 @@ export const fr: Record<string, string> = {
   'Status': 'Statut',
   'Unallocated': 'Non alloué',
   'In wallets': 'Dans les portefeuilles',
-  'Redeemed': 'Utilisé',
+  'Redeemed': 'Servi',
   'Contract prices': 'Prix contractuels',
 
   // Funding

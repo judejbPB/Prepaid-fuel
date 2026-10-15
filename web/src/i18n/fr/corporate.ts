@@ -40,7 +40,6 @@ export const fr: Record<string, string> = {
   'Lot': 'Lot',
   'Cleared': 'Encaissé',
   'Expires': 'Expire le',
-  'Refund': 'Rembourser',
   'Lots appear once your deposit is verified and activated.': 'Les lots apparaissent dès que votre dépôt est vérifié et activé.',
   'Contract prices, applied at the pump: {prices}': 'Prix contractuels appliqués à la pompe : {prices}',
   'Refunds': 'Remboursements',
