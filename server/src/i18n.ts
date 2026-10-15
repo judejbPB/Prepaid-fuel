@@ -372,14 +372,19 @@ const SUMMARY_RULES: Rule[] = [
 /** Translates server-generated text that is returned as data (sync reasons, exception summaries). */
 export function localizeData(text: string, lang: Lang): string {
   if (lang === 'en') return text;
-  return translate(text, OFFLINE_REASON, SUMMARY_RULES) ?? text;
+  return frenchNumbers(translate(text, OFFLINE_REASON, SUMMARY_RULES) ?? text);
 }
 
-const DATA_KEYS = new Set(['summary', 'reason']);
+/**
+ * `reason` is only server-generated on offline-sale records: sync results ({ clientId, status: 'rejected' })
+ * and offline exception details ({ chargedMinor, pump }). Elsewhere (refunds, freezes…) a person typed it.
+ */
+const isOfflineRecord = (o: Record<string, any>) =>
+  ('clientId' in o && o.status === 'rejected') || ('chargedMinor' in o && 'pump' in o);
 
 /**
- * Returns a copy of a response payload with server-generated `summary` / `reason` strings translated.
- * Only known texts change (exact offline reasons and summary templates), so user-entered reasons pass through.
+ * Returns a copy of a response payload with server-generated `summary` strings and offline-sale `reason`s
+ * translated. Only known texts change (exact offline reasons and summary templates).
  */
 export function localizePayload<T>(payload: T, lang: Lang): T {
   if (lang === 'en') return payload;
@@ -389,7 +394,8 @@ export function localizePayload<T>(payload: T, lang: Lang): T {
     if (Object.getPrototypeOf(v) !== Object.prototype && Object.getPrototypeOf(v) !== null) return v;
     const out: Record<string, any> = {};
     for (const [k, x] of Object.entries(v)) {
-      out[k] = typeof x === 'string' && DATA_KEYS.has(k) ? localizeData(x, lang) : walk(x, depth + 1);
+      const generated = k === 'summary' || (k === 'reason' && isOfflineRecord(v));
+      out[k] = typeof x === 'string' && generated ? localizeData(x, lang) : walk(x, depth + 1);
     }
     return out;
   };

@@ -134,11 +134,18 @@ describe('i18n coverage', () => {
     expect(reasons.length).toBeGreaterThan(5);
     for (const r of reasons) expect(localizeData(r, 'fr')).not.toBe(r);
     expect(localizeData('Station 1: offline sale of 500.00 HTG rejected at sync (wrong PIN)', 'fr'))
-      .toBe('Station 1 : vente hors ligne de 500.00 HTG rejetée à la synchronisation (code PIN incorrect)');
+      .toBe('Station 1 : vente hors ligne de 500,00 HTG rejetée à la synchronisation (code PIN incorrect)');
+    expect(localizeData('Station 1 shift close: 2,000.00 HTG variance awaiting explanation', 'fr')).toContain('2\u202f000,00 HTG');
     expect(localizeData('Station 1 shift close: 2,000.00 HTG variance awaiting explanation', 'fr')).toMatch(/^Station 1, fermeture de quart/);
     // User-entered text is left alone.
     expect(localizePayload({ items: [{ reason: 'Program ended', summary: 'wrong PIN' }] }, 'fr'))
       .toEqual({ items: [{ reason: 'Program ended', summary: 'code PIN incorrect' }] });
+    // A typed reason that happens to match a generated one is still left alone (e.g. a refund request)...
+    expect(localizePayload({ id: 4, status: 'requested', reason: 'wrong PIN' }, 'fr')).toEqual({ id: 4, status: 'requested', reason: 'wrong PIN' });
+    // ...while offline sync results and offline exception details are translated.
+    expect(localizePayload({ results: [{ clientId: 'c1', status: 'rejected', reason: 'wrong PIN', exceptionId: 1 }] }, 'fr'))
+      .toEqual({ results: [{ clientId: 'c1', status: 'rejected', reason: 'code PIN incorrect', exceptionId: 1 }] });
+    expect(localizePayload({ detail: { reason: 'wrong PIN', chargedMinor: 100, pump: 1 } }, 'fr').detail.reason).toBe('code PIN incorrect');
   });
 
   it('defaults to French unless the client asks for English', () => {
