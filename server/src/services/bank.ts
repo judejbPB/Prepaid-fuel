@@ -29,13 +29,20 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
+// Header names as banks export them, in English and French (compared without accents or case).
 const COLUMN_ALIASES: Record<string, string[]> = {
-  date: ['date', 'value date', 'value_date', 'posting date', 'transaction date'],
-  reference: ['reference', 'bank reference', 'transaction id', 'transaction reference', 'ref', 'txn id'],
-  amount: ['amount', 'credit', 'credit amount', 'montant'],
-  memo: ['memo', 'description', 'narration', 'details', 'libelle', 'libellé', 'remarks'],
-  currency: ['currency', 'ccy', 'devise'],
+  date: ['date', 'value date', 'value_date', 'posting date', 'transaction date', 'date valeur', 'date de valeur',
+    'date operation', "date d'operation", 'date comptable'],
+  reference: ['reference', 'bank reference', 'transaction id', 'transaction reference', 'ref', 'txn id',
+    'reference bancaire', 'reference transaction', 'reference operation', 'no transaction', 'n transaction', 'numero',
+    'numero transaction', 'no operation', 'n operation'],
+  amount: ['amount', 'credit', 'credit amount', 'montant', 'montant credit', 'credit htg', 'montant htg'],
+  memo: ['memo', 'description', 'narration', 'details', 'libelle', 'remarks', 'motif', 'libelle operation'],
+  currency: ['currency', 'ccy', 'devise', 'monnaie'],
 };
+
+const normalizeHeader = (h: string) => h.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/[’`]/g, "'").replace(/[°º.:#()]/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** Parses "1,234.56", "1 234,56" or "HTG 1234.56" into minor units. */
 export function parseAmount(raw: string): number | null {
@@ -56,16 +63,21 @@ const FUNDING_REF = /TR-?\s?(\d{3,})/i;
  * (TR-xxxx) and whose amount equals the expected transfer. The importer counts as the matcher,
  * so a different approver still has to activate each lot.
  */
-export function importStatement(ctx: Ctx, actor: Actor, csv: string) {
+export function importStatement(ctx: Ctx, actor: Actor, statement: string | string[][]) {
   requireRole(actor, ['dist_treasury', 'dist_admin']);
-  const rows = parseCsv(csv);
-  if (rows.length < 2) throw badRequest('empty_statement', 'Statement needs a header row and at least one line');
-  const header = rows[0].map((h) => h.trim().toLowerCase());
-  const col = (name: string) => header.findIndex((h) => COLUMN_ALIASES[name].includes(h));
-  const idx = { date: col('date'), reference: col('reference'), amount: col('amount'), memo: col('memo'), currency: col('currency') };
-  if (idx.reference < 0 || idx.amount < 0) {
-    throw badRequest('bad_columns', 'Statement needs at least "reference" and "amount" columns');
-  }
+  const all = typeof statement === 'string' ? parseCsv(statement) : statement;
+  // Bank exports often open with a title, the account number or the period: the header is the first row
+  // (within the first 20) that names both a reference and an amount column.
+  const columnsOf = (row: string[]) => {
+    const header = row.map((h) => normalizeHeader(h ?? ''));
+    const col = (name: string) => header.findIndex((h) => COLUMN_ALIASES[name].includes(h));
+    return { date: col('date'), reference: col('reference'), amount: col('amount'), memo: col('memo'), currency: col('currency') };
+  };
+  const headerAt = all.slice(0, 20).findIndex((row) => { const c = columnsOf(row); return c.reference >= 0 && c.amount >= 0; });
+  if (all.length < 2) throw badRequest('empty_statement', 'Statement needs a header row and at least one line');
+  if (headerAt < 0) throw badRequest('bad_columns', 'Statement needs at least "reference" and "amount" columns');
+  const idx = columnsOf(all[headerAt]);
+  const rows = all.slice(headerAt);
 
   const summary = { imported: 0, duplicates: 0, skipped: 0, matched: [] as string[], unmatched: 0 };
   return ctx.db.tx(() => {

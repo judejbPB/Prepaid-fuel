@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createCtx } from '../src/context.js';
@@ -34,6 +35,17 @@ describe('api', () => {
     expect(json.kpis.deposits_verified).toBe(3);
     expect(json.balance_rule.ok).toBe(true);
     expect(json.funding_queue.map((f: any) => f.status)).toContain('awaiting_bank');
+  });
+
+  it('imports a bank statement uploaded as an Excel workbook, with French errors', async () => {
+    const token = await signIn('treasury@bousol');
+    const xlsx = readFileSync(new URL('./fixtures/releve-banque.xlsx', import.meta.url)).toString('base64');
+    const ok = await call('POST', '/api/bank/import', { token, body: { xlsx } });
+    expect(ok).toMatchObject({ status: 200, json: { imported: 2, skipped: 1, unmatched: 2 } });
+    const xls = readFileSync(new URL('./fixtures/releve-banque.xls', import.meta.url)).toString('base64');
+    const old = await call('POST', '/api/bank/import', { token, body: { xlsx: xls }, headers: { 'x-lang': 'fr' } });
+    expect(old).toMatchObject({ status: 400, json: { error: 'old_xls' } });
+    expect(old.json.message).toContain('enregistrez-le en .xlsx');
   });
 
   it('keeps company data separate', async () => {

@@ -1,6 +1,6 @@
 name: Android test build
 
-# Builds the two Android apps (BOUSOL Station and BOUSOL Wallet) and publishes them as the
+# Builds the two Android apps (ALFA Station and ALFA Wallet, powered by BOUSOL) and publishes them as the
 # "android-test" pre-release, so testers can download the APKs straight onto a phone.
 on:
   push:
@@ -57,12 +57,12 @@ jobs:
       - name: Collect APKs
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/station/debug/app-station-debug.apk dist/BOUSOL-Station.apk
-          cp android/app/build/outputs/apk/wallet/debug/app-wallet-debug.apk dist/BOUSOL-Wallet.apk
+          cp android/app/build/outputs/apk/station/debug/app-station-debug.apk dist/ALFA-Station.apk
+          cp android/app/build/outputs/apk/wallet/debug/app-wallet-debug.apk dist/ALFA-Wallet.apk
           ls -l dist
       - uses: actions/upload-artifact@v4
         with:
-          name: bousol-android-${{ github.run_number }}
+          name: alfa-android-${{ github.run_number }}
           path: mobile/dist/*.apk
       - name: Publish the android-test pre-release
         if: github.ref == 'refs/heads/main'

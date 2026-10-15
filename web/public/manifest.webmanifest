@@ -1,7 +1,7 @@
 {
   "id": "/employee",
-  "name": "BOUSOL Fuel Wallet",
-  "short_name": "BOUSOL Fuel",
+  "name": "ALFA Wallet",
+  "short_name": "ALFA Wallet",
   "start_url": "/employee",
   "scope": "/",
   "display": "standalone",

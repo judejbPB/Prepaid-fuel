@@ -1,7 +1,7 @@
 {
   "id": "/station",
-  "name": "BOUSOL Station",
-  "short_name": "BOUSOL Station",
+  "name": "ALFA Station",
+  "short_name": "ALFA Station",
   "start_url": "/station",
   "scope": "/",
   "display": "standalone",

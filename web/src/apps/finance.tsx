@@ -9,20 +9,35 @@ const SAMPLE = `Date,Reference,Description,Amount
 2026-10-12,UNIBANK-90001,"Virement Entreprise B TR-4823",2000000.00
 2026-10-12,UNIBANK-90002,Bank charges,-150.00`;
 
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 export function BankStatements() {
   const me = useMe();
   const { data, reload } = useLoad(() => d.get('/api/bank/transactions'), []);
   const funding = useLoad(() => d.get('/api/funding'), []);
   const [csv, setCsv] = useState('');
+  const [excel, setExcel] = useState<{ name: string; data: string } | null>(null);
   const [result, setResult] = useState<any>(null);
   const [matching, setMatching] = useState<any>(null);
   const { busy, run } = useAction();
   const canImport = me.role === 'dist_treasury' || me.role === 'dist_admin';
 
-  const onFile = async (file?: File) => { if (file) setCsv(await file.text()); };
+  // Excel workbooks go to the server as base64 (it reads .xlsx and explains old .xls); CSV goes as text.
+  const onFile = async (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (/\.xlsx?$/i.test(file.name)) { setExcel({ name: file.name, data: toBase64(await file.arrayBuffer()) }); setCsv(''); }
+    else { setCsv(await file.text()); setExcel(null); }
+  };
   const doImport = async () => {
-    const out = await run(() => d.post('/api/bank/import', { csv }));
-    if (out) { setResult(out); setCsv(''); reload(); funding.reload(); }
+    const out = await run(() => d.post('/api/bank/import', excel ? { xlsx: excel.data } : { csv }));
+    if (out) { setResult(out); setCsv(''); setExcel(null); reload(); funding.reload(); }
   };
   const ignore = async (tx: any) => {
     const note = prompt(t('Why ignore this line? (e.g. not a fuel deposit)'));
@@ -35,13 +50,19 @@ export function BankStatements() {
       {canImport && (
         <div className="card white">
           <h2>{t('Import a statement')}</h2>
-          <p className="small muted">{t('CSV export from the bank with at least reference and amount columns (date and description optional). Credits whose description contains a funding reference (TR-xxxx) and the exact expected amount are matched automatically. A different approver still activates each lot.')}</p>
+          <p className="small muted">{t('Excel (.xlsx) or CSV statement downloaded from online banking, with at least a reference column and an amount or credit column (date and description optional). Credits whose description contains a funding reference (TR-xxxx) and the exact expected amount are matched automatically. A different approver still activates each lot.')}</p>
           <div className="row mt">
-            <input type="file" accept=".csv,text/csv" style={{ maxWidth: 320 }} onChange={(e) => onFile(e.target.files?.[0])} />
-            <button className="ghost sm" onClick={() => setCsv(SAMPLE)}>{t('Paste sample')}</button>
+            <input type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              style={{ maxWidth: 320 }} onChange={(e) => onFile(e.target)} />
+            <button className="ghost sm" onClick={() => { setCsv(SAMPLE); setExcel(null); }}>{t('Paste sample')}</button>
           </div>
-          <textarea className="mt mono" rows={5} value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={t('…or paste CSV here')} />
-          <button className="mt" disabled={busy || csv.trim().length < 10} onClick={doImport}>{t('Import and match')}</button>
+          {excel ? (
+            <div className="banner mt"><span className="grow">{t('Excel file ready: {name}', { name: excel.name })}</span>
+              <button className="ghost sm" onClick={() => setExcel(null)}>{t('Remove')}</button></div>
+          ) : (
+            <textarea className="mt mono" rows={5} value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={t('…or paste CSV here')} />
+          )}
+          <button className="mt" disabled={busy || (!excel && csv.trim().length < 10)} onClick={doImport}>{t('Import and match')}</button>
           {result && (
             <div className="banner ok mt"><span className="grow">
               {t('Imported {n} line(s) · matched {m}', { n: result.imported, m: result.matched.length })}{result.matched.length ? ` (${result.matched.join(', ')})` : ''} ·

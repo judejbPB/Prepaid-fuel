@@ -23,7 +23,7 @@ export default function Home() {
     <div className="landing dark">
       <div className="inner">
         <div className="row between"><BrandLogo large /><LangToggle dark /></div>
-        <div className="eyebrow" style={{ marginTop: 20 }}>{t('Prepaid fuel platform · powered by BOUSOL')}</div>
+        <div className="eyebrow" style={{ marginTop: 20 }}>{t('ALFA · Prepaid fuel platform · powered by BOUSOL')}</div>
         <h1>{t('Prepaid Fuel Platform')}</h1>
         <p className="lede">
           {t('A closed-loop fuel entitlement system that digitizes the voucher program. Every gourde stays traceable to cleared funds; gallons are shown at the contract price for reference.')}

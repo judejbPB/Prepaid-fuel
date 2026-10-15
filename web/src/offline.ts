@@ -52,7 +52,7 @@ export const fromB64url = (s: string) => {
 
 export function decodeChallenge(raw: string): Challenge {
   const s = raw.trim();
-  if (!s.startsWith(CHALLENGE_PREFIX)) throw new Error(t('This is not a BOUSOL station code'));
+  if (!s.startsWith(CHALLENGE_PREFIX)) throw new Error(t('This is not an ALFA station code'));
   return JSON.parse(new TextDecoder().decode(fromB64url(s.slice(CHALLENGE_PREFIX.length))));
 }
 

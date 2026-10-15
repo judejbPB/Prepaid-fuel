@@ -50,7 +50,7 @@ function Activate({ onActivated, onManager }: { onActivated: (terminal: any) => 
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
         <BrandLogo large />
-        <div className="row between"><div className="eyebrow">{t('Station app · powered by BOUSOL')}</div><LangToggle /></div>
+        <div className="row between"><div className="eyebrow">{t('ALFA Station · powered by BOUSOL')}</div><LangToggle /></div>
         <h1>{t('Activate this terminal')}</h1>
         <p className="small muted">{t('Each station runs one approved Android phone or tablet. Enter the one-time activation code from the distributor.')}</p>
         <label>{t('Activation code')}<input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="STATION2" autoCapitalize="characters" /></label>

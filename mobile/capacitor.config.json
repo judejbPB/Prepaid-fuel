@@ -1,6 +1,6 @@
 {
   "appId": "ht.bousol.fuel",
-  "appName": "BOUSOL",
+  "appName": "ALFA",
   "webDir": "www",
   "server": {
     "url": "https://bousol-prepaid-fuel.vercel.app/station",

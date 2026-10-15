@@ -5,7 +5,7 @@ export const fr: Record<string, string> = {
   'Change terminal': 'Changer de terminal',
   'Manager sign-in (no terminal on this device)': 'Connexion gérant (sans terminal sur cet appareil)',
   'Terminal activated': 'Terminal activé',
-  'Station app · powered by BOUSOL': 'Application station · une solution BOUSOL',
+  'ALFA Station · powered by BOUSOL': 'ALFA Station · propulsé par BOUSOL',
   'Activate this terminal': 'Activer ce terminal',
   'Each station runs one approved Android phone or tablet. Enter the one-time activation code from the distributor.':
     'Chaque station fonctionne avec un seul appareil Android agréé (téléphone ou tablette). Saisissez le code d’activation à usage unique fourni par le distributeur.',
@@ -131,7 +131,7 @@ export const fr: Record<string, string> = {
   'Only diesel and gasoline are sold': 'Seuls le diesel et la gazoline sont vendus',
   'Quantity must be positive': 'La quantité doit être supérieure à zéro',
   'This request is no longer open': 'Cette demande n’est plus ouverte',
-  'This is not a BOUSOL approval code': 'Ce n’est pas un code d’approbation BOUSOL',
+  'This is not an ALFA approval code': 'Ce n’est pas un code d’approbation ALFA',
   'Unreadable approval code': 'Code d’approbation illisible',
   'This approval was made for a different request': 'Cette approbation concerne une autre demande',
   'Approval code is too old. Ask the employee to scan the QR again.': 'Le code d’approbation a expiré. Demandez à l’employé de scanner à nouveau le QR.',

@@ -10,6 +10,7 @@ import { localizeLedgerPayload } from './i18n-ledger.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
+import { readXlsx } from './services/spreadsheet.js';
 import * as refunds from './services/refunds.js';
 import * as stationOffline from './services/station-offline.js';
 import * as exc from './services/exceptions.js';
@@ -163,8 +164,12 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
 
     // ---- bank statements
     api.get('/api/bank/transactions', async (req) => bank.listBankTransactions(ctx, req.actor));
-    api.post('/api/bank/import', async (req) =>
-      bank.importStatement(ctx, req.actor, body(z.object({ csv: z.string().min(10).max(2_000_000) }), req).csv));
+    // A CSV as text, or an Excel workbook (.xlsx) as base64.
+    api.post('/api/bank/import', { bodyLimit: 4_000_000 }, async (req) => {
+      const b = body(z.object({ csv: z.string().min(10).max(2_000_000).optional(), xlsx: z.string().min(10).max(3_900_000).optional() })
+        .refine((v) => !!v.csv !== !!v.xlsx, 'Send either csv or xlsx'), req);
+      return bank.importStatement(ctx, req.actor, b.xlsx ? readXlsx(Buffer.from(b.xlsx, 'base64')) : b.csv!);
+    });
     api.post('/api/bank/transactions/:id/match', async (req) =>
       bank.matchTransaction(ctx, req.actor, params(req), body(z.object({ fundingId: id }), req).fundingId));
     api.post('/api/bank/transactions/:id/ignore', async (req) =>
