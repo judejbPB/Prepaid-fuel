@@ -3,6 +3,7 @@ export const fr: Record<string, string> = {
   'Bank line ignored': 'Ligne bancaire ignorée',
   'Sage codes changed': 'Codes Sage modifiés',
   'AI match suggested': 'Rapprochement suggéré par l’IA',
+  'Statement read by AI': 'Relevé lu par l’IA',
   'Sage export downloaded': 'Export Sage téléchargé',
   'Bank statement imported': 'Relevé bancaire importé',
   'Allocation batch approved': 'Lot d’allocation approuvé',
