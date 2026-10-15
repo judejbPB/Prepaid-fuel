@@ -217,6 +217,30 @@ BEGIN SELECT RAISE(ABORT, 'journal is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS journal_entries_no_delete BEFORE DELETE ON journal_entries
 BEGIN SELECT RAISE(ABORT, 'journal is append-only'); END;
 
+-- Sage accounting export: account codes set by finance, and which ledger entries went in which export.
+CREATE TABLE IF NOT EXISTS sage_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sage_exports (
+  id INTEGER PRIMARY KEY,
+  date_from TEXT NOT NULL,
+  date_to TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK (mode IN ('summary','detail')),
+  format TEXT NOT NULL CHECK (format IN ('sage100','csv')),
+  entries INTEGER NOT NULL,
+  lines INTEGER NOT NULL,
+  debit_minor INTEGER NOT NULL,
+  filename TEXT NOT NULL,
+  file BLOB NOT NULL,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS sage_exported_entries (
+  entry_id INTEGER PRIMARY KEY REFERENCES journal_entries(id),
+  export_id INTEGER NOT NULL REFERENCES sage_exports(id)
+);
+
 CREATE TABLE IF NOT EXISTS allocation_batches (
   id INTEGER PRIMARY KEY,
   company_id INTEGER NOT NULL REFERENCES companies(id),

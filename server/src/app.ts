@@ -10,6 +10,7 @@ import { localizeLedgerPayload } from './i18n-ledger.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
+import * as sage from './services/sage.js';
 import { readXlsx } from './services/spreadsheet.js';
 import * as refunds from './services/refunds.js';
 import * as stationOffline from './services/station-offline.js';
@@ -174,6 +175,23 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
       bank.matchTransaction(ctx, req.actor, params(req), body(z.object({ fundingId: id }), req).fundingId));
     api.post('/api/bank/transactions/:id/ignore', async (req) =>
       bank.ignoreTransaction(ctx, req.actor, params(req), body(z.object({ note: z.string().min(2) }), req).note));
+
+    // ---- accounting export (Sage)
+    const period = z.object({
+      from: z.string(), to: z.string(), mode: z.enum(['summary', 'detail']).default('summary'), onlyNew: z.boolean().default(true),
+    });
+    api.get('/api/accounting/sage/settings', async (req) => sage.getSettings(ctx, req.actor));
+    api.post('/api/accounting/sage/settings', async (req) => sage.saveSettings(ctx, req.actor, body(z.object({
+      journal: z.string().optional(),
+      accounts: z.record(z.string()).optional(),
+      companies: z.array(z.object({ id, tiers: z.string() })).optional(),
+      stations: z.array(z.object({ id, section: z.string() })).optional(),
+    }), req)));
+    api.post('/api/accounting/sage/preview', async (req) => sage.preview(ctx, req.actor, body(period, req)));
+    api.post('/api/accounting/sage/export', async (req) =>
+      sage.exportFile(ctx, req.actor, body(period.extend({ format: z.enum(['sage100', 'csv']).default('sage100') }), req)));
+    api.get('/api/accounting/sage/exports', async (req) => sage.listExports(ctx, req.actor));
+    api.post('/api/accounting/sage/exports/:id/download', async (req) => sage.downloadExport(ctx, req.actor, params(req)));
 
     // ---- refunds
     api.get('/api/refunds', async (req) => refunds.listRefunds(ctx, req.actor));
