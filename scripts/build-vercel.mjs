@@ -20,7 +20,7 @@ await build({
   banner: { js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);" },
   logLevel: 'warning',
 });
-writeFileSync(`${fn}/.vc-config.json`, JSON.stringify({ runtime: 'nodejs22.x', handler: 'index.mjs', launcherType: 'Nodejs', maxDuration: 30 }, null, 2));
+writeFileSync(`${fn}/.vc-config.json`, JSON.stringify({ runtime: 'nodejs22.x', handler: 'index.mjs', launcherType: 'Nodejs', maxDuration: 60 }, null, 2));
 writeFileSync(`${out}/config.json`, JSON.stringify({
   version: 3,
   routes: [

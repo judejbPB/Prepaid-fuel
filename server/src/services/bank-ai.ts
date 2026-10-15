@@ -67,7 +67,7 @@ export const claudeSuggester: Suggester = async (line, candidates, lang) => {
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
     throw new AppError(503, 'ai_unavailable', 'AI suggestions are not set up on this server yet');
   }
-  // The hosted API function stops at 30 seconds, so one try within 20.
+  // Suggestions should feel instant; one try within 20 seconds.
   const client = new Anthropic({ timeout: 20_000, maxRetries: 0 });
   const input = {
     language: lang === 'fr' ? 'French' : 'English',

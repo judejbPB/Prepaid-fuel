@@ -185,6 +185,12 @@ const EXACT: Record<string, string> = {
   'AI suggestions are not set up on this server yet': 'Les suggestions IA ne sont pas encore activées sur ce serveur',
   'The AI service did not answer. Try again, or match the line by hand.': 'Le service d’IA n’a pas répondu. Réessayez ou rapprochez la ligne manuellement.',
 
+  // statement-ai.ts
+  'The AI service could not read this statement. Try again, or export it from the bank as Excel or CSV.':
+    'Le service d’IA n’a pas pu lire ce relevé. Réessayez, ou exportez-le de la banque en Excel ou en CSV.',
+  'This file is not a PDF': 'Ce fichier n’est pas un PDF',
+  'This statement is too long for AI reading. Split it by month and try again.': 'Ce relevé est trop long pour la lecture par IA. Découpez-le par mois et réessayez.',
+
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
   'Account codes: 1 to 13 letters or digits': 'Numéros de compte : 1 à 13 lettres ou chiffres',

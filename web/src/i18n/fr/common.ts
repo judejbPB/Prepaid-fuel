@@ -178,6 +178,20 @@ export const fr: Record<string, string> = {
     'Relevé Excel (.xlsx) ou CSV téléchargé depuis la banque en ligne, avec au moins une colonne de référence et une colonne de montant ou de crédit (date et libellé facultatifs). Les crédits dont le libellé contient une référence de financement (TR-xxxx) et le montant exact attendu sont rapprochés automatiquement. Un autre approbateur doit toujours activer chaque lot.',
   'Excel file ready: {name}': 'Fichier Excel prêt : {name}',
   'AI suggestions': 'Suggestions IA',
+  'PDF statement, or a file laid out differently? AI can read the credit lines for you to check before importing.':
+    'Relevé en PDF, ou fichier présenté autrement ? L’IA peut en lire les crédits, que vous vérifiez avant l’import.',
+  'PDF ready: {name}': 'PDF prêt : {name}',
+  'Reading…': 'Lecture en cours…',
+  'Read with AI': 'Lire avec l’IA',
+  'The columns of this file were not recognised. AI can read it instead; you check the lines before anything is imported.':
+    'Les colonnes de ce fichier n’ont pas été reconnues. L’IA peut le lire à la place ; vous vérifiez les lignes avant tout import.',
+  'AI reading: check before importing': 'Lecture par IA : à vérifier avant l’import',
+  '{n} credit line(s), total {total}. Compare with the statement: AI can misread. Nothing is imported until you confirm.':
+    '{n} ligne(s) de crédit, total {total}. Comparez avec le relevé : l’IA peut se tromper. Rien n’est importé avant votre confirmation.',
+  'AI note:': 'Remarque de l’IA :',
+  '{n} line(s) left out because the amount could not be read.': '{n} ligne(s) écartée(s) car le montant était illisible.',
+  'no bank reference: generated': 'sans référence bancaire : générée',
+  'Import these {n} line(s) and match': 'Importer ces {n} ligne(s) et rapprocher',
   'Ask again': 'Redemander',
   'Suggest a match': 'Suggérer un rapprochement',
   'AI compares this line with the open funding requests (reference typos, company name, amount, date). It only suggests: you choose, and a second approver still activates the lot.':
