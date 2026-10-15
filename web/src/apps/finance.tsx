@@ -107,10 +107,34 @@ function MatchLine({ txn, funding, onClose, onDone }: { txn: any; funding: any[]
   const [fid, setFid] = useState<number | ''>('');
   const { busy, run } = useAction();
   const sameAmount = funding.filter((f) => f.amount_minor === txn.amount_minor);
+  const [ai, setAi] = useState<any>(null);
+  const askAi = async () => {
+    const out = await run(() => d.post(`/api/bank/transactions/${txn.id}/suggest`));
+    if (out) setAi(out);
+  };
   return (
     <Modal title={t('Match {ref}', { ref: txn.bank_reference })} onClose={onClose}>
       <div className="stack">
         <p className="small muted">{money(txn.amount_minor, txn.currency)} · {txn.memo || t('no description')}</p>
+        <div className="card">
+          <div className="row between">
+            <strong className="small">{t('AI suggestions')}</strong>
+            <button className="sm ghost" disabled={busy} onClick={askAi}>{ai ? t('Ask again') : t('Suggest a match')}</button>
+          </div>
+          {!ai && <p className="small muted">{t('AI compares this line with the open funding requests (reference typos, company name, amount, date). It only suggests: you choose, and a second approver still activates the lot.')}</p>}
+          {ai && !ai.suggestions.length && <p className="small muted">{t('No likely match among the open requests. Contact the company or ignore the line.')}</p>}
+          {ai?.suggestions.map((s: any) => (
+            <div key={s.fundingId} className="row mt" style={{ alignItems: 'flex-start' }}>
+              <div className="small" style={{ flex: 1 }}>
+                <div><span className="mono">{s.reference}</span> · {s.company} · {money(s.amountMinor, s.currency)}{' '}
+                  <span className={`badge ${s.confidence === 'high' ? 'ok' : s.confidence === 'medium' ? 'info' : ''}`}>{s.confidence === 'high' ? t('Likely') : s.confidence === 'medium' ? t('Possible') : t('Unlikely')}</span></div>
+                <div className="muted">{s.reason}</div>
+                {!s.amountMatches && <div style={{ color: 'var(--bad)' }}>{t('Amount differs: contact the company before matching.')}</div>}
+              </div>
+              <button className="sm" disabled={!s.amountMatches} onClick={() => setFid(s.fundingId)}>{fid === s.fundingId ? t('Selected') : t('Choose')}</button>
+            </div>
+          ))}
+        </div>
         <label>{t('Funding request awaiting bank')}
           <select value={fid} onChange={(e) => setFid(Number(e.target.value))}>
             <option value="">{t('Select…')}</option>

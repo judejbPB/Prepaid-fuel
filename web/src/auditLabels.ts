@@ -3,7 +3,7 @@ import { cap } from './api';
 import { t } from './i18n';
 
 const ACTIONS: Record<string, () => string> = {
-  'bank.ignore': () => t('Bank line ignored'), 'bank.import': () => t('Bank statement imported'),
+  'bank.ignore': () => t('Bank line ignored'), 'bank.import': () => t('Bank statement imported'), 'bank.ai_suggest': () => t('AI match suggested'),
   'sage.settings': () => t('Sage codes changed'), 'sage.export': () => t('Sage export downloaded'),
   'batch.approve': () => t('Allocation batch approved'), 'batch.create': () => t('Allocation batch created'),
   'batch.post': () => t('Allocation batch posted'), 'batch.reject': () => t('Allocation batch rejected'),
@@ -37,7 +37,7 @@ const FIELDS: Record<string, () => string> = {
   terminalId: () => t('Terminal'), reason: () => t('Reason'), reference: () => t('Reference'), code: () => t('Code'),
   label: () => t('Label'), stationId: () => t('Station'), companyId: () => t('Company'), status: () => t('Status'),
   from: () => t('From'), to: () => t('To'), entries: () => t('Entries'), format: () => t('File'), mode: () => t('Detail'),
-  journal: () => t('Journal code'),
+  journal: () => t('Journal code'), suggestions: () => t('AI suggestions'),
 };
 
 export const auditAction = (code: string) => ACTIONS[code]?.() ?? code;
