@@ -11,8 +11,9 @@
     "build": "npm run build -w web && npm run typecheck -w server",
     "start": "npm run start -w server",
     "seed": "npm run seed -w server",
-    "test": "npm test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "test": "npm test -w server && node scripts/check-i18n.mjs",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "check:i18n": "node scripts/check-i18n.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

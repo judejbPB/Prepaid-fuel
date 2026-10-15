@@ -5,6 +5,7 @@ import { z, ZodError } from 'zod';
 import { authenticate, DISTRIBUTOR, login, logout, requireRole, type Actor } from './auth.js';
 import type { Ctx } from './context.js';
 import { AppError } from './errors.js';
+import { localize, localizePayload, localizeValidation, requestLang } from './i18n.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
@@ -29,17 +30,23 @@ const gradeMap = z.record(z.string(), z.number().nonnegative()).default({});
 export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean } = {}) {
   const app = Fastify({ logger: opts.logger ?? false });
 
-  app.setErrorHandler((err: any, _req, reply) => {
-    if (err instanceof AppError) return reply.status(err.status).send({ error: err.code, message: err.message });
+  // Messages are written in English; they are translated per request (x-lang header, French by default).
+  app.setErrorHandler((err: any, req, reply) => {
+    const lang = requestLang(req.headers);
+    if (err instanceof AppError) return reply.status(err.status).send({ error: err.code, message: localize(err.message, lang) });
     if (err instanceof ZodError) {
-      return reply.status(400).send({ error: 'invalid', message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });
+      const message = err.issues.map((i) => `${i.path.join('.')}: ${localizeValidation(i.message, lang)}`).join('; ');
+      return reply.status(400).send({ error: 'invalid', message });
     }
     if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed')) {
-      return reply.status(409).send({ error: 'duplicate', message: 'A record with these details already exists' });
+      return reply.status(409).send({ error: 'duplicate', message: localize('A record with these details already exists', lang) });
     }
     app.log.error(err);
-    return reply.status(500).send({ error: 'internal', message: 'Unexpected error' });
+    return reply.status(500).send({ error: 'internal', message: localize('Unexpected error', lang) });
   });
+
+  // Server-generated text returned as data (offline-sync rejection reasons, exception summaries).
+  app.addHook('preSerialization', async (req, _reply, payload) => localizePayload(payload, requestLang(req.headers)));
 
   const bearer = (req: FastifyRequest) => req.headers.authorization?.replace(/^Bearer\s+/i, '');
   const auth = async (req: FastifyRequest) => {
@@ -272,7 +279,7 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
   if (opts.staticDir && existsSync(opts.staticDir)) {
     app.register(fastifyStatic, { root: opts.staticDir, wildcard: false });
     app.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {
-      if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not_found', message: 'No such endpoint' });
+      if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not_found', message: localize('No such endpoint', requestLang(req.headers)) });
       return reply.sendFile('index.html');
     });
   }

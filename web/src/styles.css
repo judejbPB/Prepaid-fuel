@@ -158,7 +158,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--n
 .kv { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .kv:last-child { border-bottom: none; }
 .tabbar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 440px; background: #fff; border-top: 1px solid var(--line); display: flex; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
-.tabbar a { flex: 1; text-align: center; text-decoration: none; padding: 8px; font-size: 13px; font-weight: 600; color: var(--muted); border-radius: 8px; }
+.tabbar a { flex: 1; min-width: 0; text-align: center; text-decoration: none; padding: 6px 4px; font-size: 12px; line-height: 1.25; font-weight: 600; color: var(--muted); border-radius: 8px; }
 .tabbar a.active { color: var(--navy); background: var(--card); }
 .pin-dots { display: flex; gap: 14px; justify-content: center; margin: 16px 0; }
 .pin-dots span { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--navy); }
