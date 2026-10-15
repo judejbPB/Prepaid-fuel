@@ -26,6 +26,8 @@ export const session = {
   },
 };
 
+export const SIGNED_OUT_EVENT = 'bousol:signed-out';
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
 }
@@ -41,7 +43,11 @@ export function api(surface: Surface) {
     const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      if (res.status === 401 && data.error === 'unauthenticated') session.clear(surface);
+      if (res.status === 401 && data.error === 'unauthenticated') {
+        session.clear(surface);
+        // Let the app show the sign-in screen instead of leaving a screen whose buttons all fail.
+        window.dispatchEvent(new CustomEvent(SIGNED_OUT_EVENT, { detail: surface }));
+      }
       throw new ApiError(res.status, data.error ?? 'error', data.message ?? res.statusText);
     }
     return data as T;

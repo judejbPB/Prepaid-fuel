@@ -188,6 +188,14 @@ On first boot with an empty database the server creates the distributor admin fr
 from the control center. Put it behind HTTPS (e.g. a reverse proxy or your host's TLS) and back up the
 `/data` volume. Do **not** run `npm run seed` in production: it wipes the database and loads demo data.
 
+## Hosted demo (Vercel)
+`scripts/build-vercel.mjs` builds the web app plus one serverless function for the API, seeded with demo data.
+Serverless instances start and stop on their own, so connect a **Vercel Blob** store to the project
+(Storage → Create → Blob, private, connected to this project; it adds `BLOB_READ_WRITE_TOKEN`). The API then
+keeps its database there (`server/src/demo-persist.ts`): sign-ins, enrolled phones and sales survive cold
+starts, redeploys and requests that reach different instances. Without a store the demo lives in memory
+and resets whenever an instance restarts. To start the demo over, delete `demo/bousol-demo.db` from the store.
+
 ## Android apps
 `mobile/` wraps the web app in two Android apps (Capacitor), built from one project as product flavors:
 

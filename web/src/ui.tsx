@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { api, ApiError, session, type Surface } from './api';
+import { api, ApiError, session, SIGNED_OUT_EVENT, type Surface } from './api';
 
 // ---------------------------------------------------------------- data hooks
 
@@ -161,6 +161,7 @@ export function Authed({ surface, children, loginExtra, offlineOk, onLoginError 
 }) {
   const [me, setMe] = useState<Me | null>(null);
   const [checked, setChecked] = useState(false);
+  const [expired, setExpired] = useState(false);
   const load = useCallback(async () => {
     if (!session.token(surface)) { setMe(null); setChecked(true); return; }
     try {
@@ -175,8 +176,21 @@ export function Authed({ surface, children, loginExtra, offlineOk, onLoginError 
     setChecked(true);
   }, [surface, offlineOk]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const onSignedOut = (e: Event) => {
+      if ((e as CustomEvent).detail !== surface) return;
+      if (offlineOk) writeMe(surface, null);
+      setMe(null);
+      setExpired(true);
+    };
+    window.addEventListener(SIGNED_OUT_EVENT, onSignedOut);
+    return () => window.removeEventListener(SIGNED_OUT_EVENT, onSignedOut);
+  }, [surface, offlineOk]);
   if (!checked) return null;
-  if (!me) return <Login surface={surface} onDone={load} extra={loginExtra} onError={onLoginError} />;
+  if (!me) {
+    const notice = expired ? <div className="banner">Your session ended. Sign in again to continue.</div> : null;
+    return <Login surface={surface} onDone={() => { setExpired(false); load(); }} extra={<>{notice}{loginExtra}</>} onError={onLoginError} />;
+  }
   return <MeCtx.Provider value={me}>{children}</MeCtx.Provider>;
 }
 
@@ -208,7 +222,8 @@ function Login({ surface, onDone, extra, onError }: { surface: Surface; onDone: 
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <div className="eyebrow">BOUSOL · Prepaid fuel</div>
+        <BrandLogo large />
+        <div className="eyebrow">Prepaid fuel · powered by BOUSOL</div>
         <h1>{SURFACE_TITLE[surface]}</h1>
         {extra}
         <label>{surface === 'employee' ? 'Phone number' : 'Login'}
@@ -246,20 +261,25 @@ export function Shell({ surface, nav, children }: { surface: Surface; nav: [stri
   return (
     <div className="shell">
       <nav className="side">
-        <div className="brand">BOUSOL</div>
+        <div className="brand"><BrandLogo /></div>
         <div className="surface">{SURFACE_TITLE[surface]}</div>
         {nav.map(([to, label]) => <NavLink key={to} to={to} end>{label}</NavLink>)}
         <div className="spacer" />
         <div className="who">
           <b>{me.name}</b>
           {roleLabel(me.role)}{me.company ? ` · ${me.company.name}` : ''}{me.station ? ` · ${me.station.name}` : ''}
-          <div><button className="ghost sm" style={{ color: '#f0a332', paddingLeft: 0 }} onClick={logout}>Sign out</button></div>
+          <div><button className="ghost sm" style={{ color: 'var(--accent-on-dark)', paddingLeft: 0 }} onClick={logout}>Sign out</button></div>
         </div>
       </nav>
       <main className="main">{children}</main>
     </div>
   );
 }
+
+/** ALFA (Bandari Haiti) logo on a white chip, so it reads on navy and on light backgrounds. */
+export const BrandLogo = ({ large }: { large?: boolean }) => (
+  <span className={`brand-logo${large ? ' lg' : ''}`}><img src="/alfa-logo.png" alt="ALFA · Bandari Haiti" /></span>
+);
 
 export const PageHead = ({ eyebrow, title, children }: { eyebrow: string; title: string; children?: ReactNode }) => (
   <div className="page-head">
