@@ -167,21 +167,33 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--n
 .progress div { text-align: center; padding: 10px; border-radius: 10px; border: 1.5px solid var(--line); font-weight: 600; font-size: 14px; color: var(--muted); }
 .progress div.done { background: var(--ok-bg); border-color: var(--ok-bg); color: var(--ok); }
 .progress div.now { background: var(--amber); border-color: var(--amber); color: var(--navy); }
+.terminal-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 .qr-box { background: #fff; border-radius: 12px; padding: 12px; display: grid; place-items: center; text-align: center; gap: 8px; }
 .code { font-family: ui-monospace, Menlo, monospace; font-size: 20px; letter-spacing: 0.12em; font-weight: 700; }
 
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .main { min-width: 0; }
   .side { flex-direction: row; flex-wrap: wrap; padding: 12px; }
   .side .surface, .side .spacer { display: none; }
   .side .who { border: none; padding: 9px 10px; }
   .main { padding: 20px 16px 40px; }
-  .g2, .g3, .g4 { grid-template-columns: 1fr 1fr; }
+  .g2, .g3, .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .steps, .surfaces { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 560px) {
-  .g2, .g3, .g4, .steps, .surfaces { grid-template-columns: 1fr; }
+  .g2, .g3, .g4, .steps, .surfaces { grid-template-columns: minmax(0, 1fr); }
   .progress { grid-template-columns: 1fr 1fr; }
+  h1 { font-size: 22px; }
+  .main { padding: 16px 16px 40px; }
+  /* Station app on a phone: one column, edge to edge. */
+  .terminal-bg { padding: 0; }
+  .terminal { border: none; border-radius: 0; padding: 16px; min-height: 100vh; }
+  /* Wide tables scroll sideways inside their card instead of stretching the page. */
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+@media (max-width: 760px) {
+  .terminal-cols { grid-template-columns: 1fr; }
 }
 
 /* Live indicator on QR screens: a static screenshot visibly stops moving. */

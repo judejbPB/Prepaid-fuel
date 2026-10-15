@@ -1,0 +1,12 @@
+{
+  "id": "/station",
+  "name": "BOUSOL Station",
+  "short_name": "BOUSOL Station",
+  "start_url": "/station",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#12293f",
+  "theme_color": "#12293f",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
