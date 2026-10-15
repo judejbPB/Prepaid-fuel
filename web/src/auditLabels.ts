@@ -4,6 +4,7 @@ import { t } from './i18n';
 
 const ACTIONS: Record<string, () => string> = {
   'bank.ignore': () => t('Bank line ignored'), 'bank.import': () => t('Bank statement imported'), 'bank.ai_suggest': () => t('AI match suggested'), 'bank.ai_read': () => t('Statement read by AI'),
+  'exception.ai_summary': () => t('Dispute analysed by AI'), 'exception.reply': () => t('Reply sent to the employee'),
   'alert.cleared': () => t('Fuel alert marked normal'), 'alert.confirmed': () => t('Fuel alert marked to follow up'),
   'sage.settings': () => t('Sage codes changed'), 'sage.export': () => t('Sage export downloaded'),
   'batch.approve': () => t('Allocation batch approved'), 'batch.create': () => t('Allocation batch created'),
@@ -38,7 +39,7 @@ const FIELDS: Record<string, () => string> = {
   terminalId: () => t('Terminal'), reason: () => t('Reason'), reference: () => t('Reference'), code: () => t('Code'),
   label: () => t('Label'), stationId: () => t('Station'), companyId: () => t('Company'), status: () => t('Status'),
   from: () => t('From'), to: () => t('To'), entries: () => t('Entries'), format: () => t('File'), mode: () => t('Detail'),
-  journal: () => t('Journal code'), suggestions: () => t('AI suggestions'), source: () => t('File'), rule: () => t('Rule'), note: () => t('Note'),
+  journal: () => t('Journal code'), suggestions: () => t('AI suggestions'), source: () => t('File'), rule: () => t('Rule'), suggestion: () => t('AI suggestion'), message: () => t('Message'), note: () => t('Note'),
 };
 
 export const auditAction = (code: string) => ACTIONS[code]?.() ?? code;

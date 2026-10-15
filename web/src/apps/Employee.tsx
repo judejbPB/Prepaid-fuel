@@ -327,6 +327,9 @@ function History({ w, reload, online }: { w: any; reload: () => void; online: bo
           <div key={d.id} className="card" style={{ padding: 12 }}>
             <div className="row between"><span className="small">{d.summary}</span><Status s={d.status} /></div>
             {d.resolution && <div className="small muted">{d.resolution}</div>}
+            {d.messages?.map((m: any) => (
+              <div key={m.id} className="small" style={{ marginTop: 6 }}><span className="muted">{t('Message from {name}, {when}:', { name: m.author_name ?? '—', when: when(m.created_at) })}</span> {m.body}</div>
+            ))}
           </div>
         ))}
       </>}

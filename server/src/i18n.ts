@@ -195,6 +195,10 @@ const EXACT: Record<string, string> = {
   // fuel-alerts.ts
   'This alert has already been reviewed': 'Cette alerte a déjà été examinée',
 
+  // dispute-ai.ts
+  'The AI service did not answer. Try again, or handle the dispute by hand.': 'Le service d’IA n’a pas répondu. Réessayez, ou traitez la contestation manuellement.',
+  'Only disputes have a summary and replies': 'Seules les contestations ont un résumé et des réponses',
+
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
   'Account codes: 1 to 13 letters or digits': 'Numéros de compte : 1 à 13 lettres ou chiffres',
