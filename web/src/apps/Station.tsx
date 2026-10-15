@@ -256,7 +256,7 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
   const step = !active ? 1 : active.status === 'pending' ? 2 : active.status === 'approved' ? 3 : 4;
   return (
     <>
-      <div className="grid mt" style={{ gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)' }}>
+      <div className="grid mt terminal-cols">
         <div className="card">
           {step === 1 && <>
             <h3>New redemption request</h3>
@@ -284,7 +284,7 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
               <span>{cap(active.grade)}</span><span>Pump {active.pump}</span><b style={{ fontSize: 20 }}>{requested(active)}</b>
             </div>
             <ol className="small muted" style={{ paddingLeft: 18, margin: '10px 0' }}>
-              <li>The employee scans the QR on the right with the BOUSOL app (no internet needed) and enters their PIN.</li>
+              <li>The employee scans this QR with the BOUSOL app (no internet needed) and enters their PIN.</li>
               <li>Scan the approval code on their phone here. Check the code’s bar is moving: a frozen bar means a photo.</li>
             </ol>
             <QrScanner prefix={RESPONSE_PREFIX} facing="environment" label="Scan employee phone" onResult={authorize} />

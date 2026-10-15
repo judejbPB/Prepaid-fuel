@@ -26,6 +26,11 @@ createRoot(document.getElementById('root')!).render(
 );
 
 // Offline support (production builds only; the dev server serves modules that shouldn't be cached).
+// The station app installs as its own home-screen app (opens on /station); everything else installs the wallet.
+if (location.pathname.startsWith('/station')) {
+  document.querySelector('link[rel=manifest]')?.setAttribute('href', '/station.webmanifest');
+}
+
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
