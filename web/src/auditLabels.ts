@@ -4,6 +4,7 @@ import { t } from './i18n';
 
 const ACTIONS: Record<string, () => string> = {
   'bank.ignore': () => t('Bank line ignored'), 'bank.import': () => t('Bank statement imported'),
+  'sage.settings': () => t('Sage codes changed'), 'sage.export': () => t('Sage export downloaded'),
   'batch.approve': () => t('Allocation batch approved'), 'batch.create': () => t('Allocation batch created'),
   'batch.post': () => t('Allocation batch posted'), 'batch.reject': () => t('Allocation batch rejected'),
   'batch.release_hold': () => t('Held allocation line released'), 'batch.submit': () => t('Allocation batch submitted'),
@@ -35,11 +36,14 @@ const FIELDS: Record<string, () => string> = {
   role: () => t('Role'), name: () => t('Name'), approvalThreshold: () => t('Approval threshold'), address: () => t('Address'),
   terminalId: () => t('Terminal'), reason: () => t('Reason'), reference: () => t('Reference'), code: () => t('Code'),
   label: () => t('Label'), stationId: () => t('Station'), companyId: () => t('Company'), status: () => t('Status'),
+  from: () => t('From'), to: () => t('To'), entries: () => t('Entries'), format: () => t('File'), mode: () => t('Detail'),
+  journal: () => t('Journal code'),
 };
 
 export const auditAction = (code: string) => ACTIONS[code]?.() ?? code;
 const ENTITIES: Record<string, () => string> = {
   allocation_line: () => t('Allocation line'), bank_statement: () => t('Bank statement'), bank_transaction: () => t('Bank line'),
+  sage_settings: () => t('Sage codes'), sage_export: () => t('Sage export'),
   batch: () => t('Allocation batch'), company: () => t('Company'), contract: () => t('Contract price'), employee: () => t('Employee'),
   exception: () => t('Exception'), funding: () => t('Funding'), lot: () => t('Lot'), recurring: () => t('Recurring benefit'),
   redemption: () => t('Fuel request'), refund: () => t('Refund'), shift: () => t('Shift'), station: () => t('Station'),

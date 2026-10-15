@@ -80,6 +80,7 @@ const NOUN: Record<string, string> = {
   'Activation code': 'Code d’activation',
   Employee: 'Employé',
   'Bank line': 'Ligne bancaire',
+  'Sage export': 'Export Sage',
   Redemption: 'Transaction carburant',
   Exception: 'Exception',
   Company: 'Entreprise',
@@ -179,6 +180,14 @@ const EXACT: Record<string, string> = {
   'Statement needs a header row and at least one line': 'Le relevé doit contenir une ligne d’en-tête et au moins une ligne d’opération',
   'Statement needs at least "reference" and "amount" columns':
     'Le relevé doit contenir au moins une colonne « Référence » et une colonne « Montant » (ou « Crédit »)',
+
+  // sage.ts
+  'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
+  'Account codes: 1 to 13 letters or digits': 'Numéros de compte : 1 à 13 lettres ou chiffres',
+  'Customer codes: 1 to 17 letters or digits': 'Comptes tiers : 1 à 17 lettres ou chiffres',
+  'Analytic sections: up to 13 letters or digits': 'Sections analytiques : 13 lettres ou chiffres au maximum',
+  'Choose a start date on or before the end date': 'Choisissez une date de début antérieure ou égale à la date de fin',
+  'Nothing to export for this period': 'Rien à exporter pour cette période',
 
   // spreadsheet.ts
   'This Excel file is damaged or not an .xlsx workbook': 'Ce fichier Excel est endommagé ou n’est pas un classeur .xlsx',
@@ -288,6 +297,7 @@ const RULES: Rule[] = [
 
   // errors.notFound
   [/^(.+) not found$/, (what) => `${NOUN[what] ?? what} introuvable`],
+  [/^No Sage account for ledger account (.+)$/, (a) => `Aucun compte Sage pour le compte du grand livre ${a}`],
 ];
 
 function translate(message: string, exact: Record<string, string>, rules: Rule[]): string | undefined {

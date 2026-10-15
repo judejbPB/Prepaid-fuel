@@ -1,6 +1,8 @@
 // French for audit-log action names and detail fields (web/src/auditLabels.ts).
 export const fr: Record<string, string> = {
   'Bank line ignored': 'Ligne bancaire ignorée',
+  'Sage codes changed': 'Codes Sage modifiés',
+  'Sage export downloaded': 'Export Sage téléchargé',
   'Bank statement imported': 'Relevé bancaire importé',
   'Allocation batch approved': 'Lot d’allocation approuvé',
   'Allocation batch created': 'Lot d’allocation créé',

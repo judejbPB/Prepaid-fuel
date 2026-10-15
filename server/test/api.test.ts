@@ -48,6 +48,23 @@ describe('api', () => {
     expect(old.json.message).toContain('enregistrez-le en .xlsx');
   });
 
+  it('exports Sage journal entries; only the admin changes the codes; companies cannot export', async () => {
+    const treasury = await signIn('treasury@bousol');
+    const period = { from: '2000-01-01', to: '2100-12-31' };
+    expect((await call('POST', '/api/accounting/sage/settings', { token: treasury, body: { journal: 'VT' } })).status).toBe(403);
+    const bad = await call('POST', '/api/accounting/sage/settings', { token: await signIn('admin@bousol'), body: { journal: 'TOO-LONG' }, headers: { 'x-lang': 'fr' } });
+    expect(bad).toMatchObject({ status: 400, json: { message: 'Code journal : 1 à 6 lettres ou chiffres' } });
+    const preview = await call('POST', '/api/accounting/sage/preview', { token: treasury, body: period });
+    expect(preview.status).toBe(200);
+    expect(preview.json.totals.debit).toBe(preview.json.totals.credit);
+    const file = await call('POST', '/api/accounting/sage/export', { token: treasury, body: { ...period, format: 'csv' } });
+    expect(file).toMatchObject({ status: 200, json: { filename: expect.stringMatching(/\.csv$/) } });
+    expect((await call('GET', '/api/accounting/sage/exports', { token: treasury })).json[0]).not.toHaveProperty('file');
+    const again = await call('POST', `/api/accounting/sage/exports/${file.json.id}/download`, { token: treasury });
+    expect(again.json.contentBase64).toBe(file.json.contentBase64);
+    expect((await call('POST', '/api/accounting/sage/preview', { token: await signIn('prep@companya'), body: period })).status).toBe(403);
+  });
+
   it('keeps company data separate', async () => {
     const tokenB = await signIn('prep@companyb');
     const companyA = ctx.db.get("SELECT id FROM companies WHERE name = 'Entreprise A'");
