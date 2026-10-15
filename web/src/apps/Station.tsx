@@ -8,7 +8,7 @@ import {
   authorizeLocal, cancelLocal, completeLocal, createLocalRequest, isLocal, offlineStore, packUsable,
   refreshLocalRequest, syncAndRefresh, type OfflinePack,
 } from '../station-offline';
-import { Authed, Empty, Kpi, PageHead, Shell, Status, useAction, useLoad, useLogout, useMe } from '../ui';
+import { Authed, BrandLogo, Empty, Kpi, PageHead, Shell, Status, useAction, useLoad, useLogout, useMe } from '../ui';
 import { ExceptionsPanel } from './shared';
 
 const s = api('station');
@@ -47,7 +47,8 @@ function Activate({ onActivated, onManager }: { onActivated: (t: any) => void; o
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <div className="eyebrow">BOUSOL · Station app</div>
+        <BrandLogo large />
+        <div className="eyebrow">Station app · powered by BOUSOL</div>
         <h1>Activate this terminal</h1>
         <p className="small muted">Each station runs one approved Android phone or tablet. Enter the one-time activation code from the distributor.</p>
         <label>Activation code<input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="STATION2" autoCapitalize="characters" /></label>
@@ -284,7 +285,7 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
               <span>{cap(active.grade)}</span><span>Pump {active.pump}</span><b style={{ fontSize: 20 }}>{requested(active)}</b>
             </div>
             <ol className="small muted" style={{ paddingLeft: 18, margin: '10px 0' }}>
-              <li>The employee scans this QR with the BOUSOL app (no internet needed) and enters their PIN.</li>
+              <li>The employee scans this QR with the fuel wallet app (no internet needed) and enters their PIN.</li>
               <li>Scan the approval code on their phone here. Check the code’s bar is moving: a frozen bar means a photo.</li>
             </ol>
             <QrScanner prefix={RESPONSE_PREFIX} facing="environment" label="Scan employee phone" onResult={authorize} />

@@ -111,7 +111,7 @@ function Balance({ w }: { w: any }) {
   const frozen = w.employee.status !== 'active' || w.employee.company_status !== 'active';
   return (
     <div className="stack">
-      <div className="row between"><h2>My fuel</h2><button className="ghost sm" onClick={logout}>Sign out</button></div>
+      <div className="row between"><div className="row" style={{ gap: 10 }}><img src="/alfa-logo.png" alt="ALFA" style={{ height: 18 }} /><h2>My fuel</h2></div><button className="ghost sm" onClick={logout}>Sign out</button></div>
       <p className="muted" style={{ marginTop: -8 }}>{w.employee.name} · {w.employee.company_name}</p>
       {frozen && <div className="banner bad">Your fuel wallet is frozen. Contact your company admin.</div>}
       <div className="balance-card">
@@ -269,7 +269,7 @@ function Receipt() {
   const done = r.status === 'completed';
   return (
     <div className="stack" style={{ textAlign: 'center' }}>
-      {done ? <div className="check">✓</div> : <div className="check" style={{ background: 'var(--amber)', color: 'var(--navy)' }}>…</div>}
+      {done ? <div className="check">✓</div> : <div className="check" style={{ background: 'var(--amber)', color: 'var(--on-accent)' }}>…</div>}
       <h2>{done ? 'Redeemed' : r.status === 'approved' ? 'Approved — attendant is dispensing' : cap(r.status)}</h2>
       <div style={{ fontSize: 26, fontWeight: 700 }} className="num">{money(done ? r.charged_minor : r.approved_minor, r.currency)}</div>
       <div>{gal(done ? r.dispensed_mgal : r.approved_mgal, 2)} gal {cap(r.grade)} · {money(r.price_minor, r.currency)}/gal</div>

@@ -4,6 +4,10 @@ const tokenKey = (s: Surface) => `bousol.token.${s}`;
 const TERMINAL_KEY = 'bousol.terminalKey';
 const TERMINAL_INFO = 'bousol.terminalInfo';
 const DEVICE_KEY = 'bousol.deviceId';
+// Hosted demo only: the data version this browser last saw, so whichever server instance answers next
+// catches up first (see server/src/demo-persist.ts). Absent on a normal deployment.
+const DEMO_VERSION = 'x-demo-version';
+const DEMO_VERSION_KEY = 'bousol.demoVersion';
 
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -26,6 +30,8 @@ export const session = {
   },
 };
 
+export const SIGNED_OUT_EVENT = 'bousol:signed-out';
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
 }
@@ -38,10 +44,18 @@ export function api(surface: Surface) {
     const tk = session.terminalKey();
     if (surface === 'station' && tk) headers['x-terminal-key'] = tk;
     if (body !== undefined) headers['content-type'] = 'application/json';
+    const seen = store.get(DEMO_VERSION_KEY);
+    if (seen) headers[DEMO_VERSION] = seen;
     const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const latest = res.headers.get(DEMO_VERSION);
+    if (latest && latest !== seen) store.set(DEMO_VERSION_KEY, latest);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      if (res.status === 401 && data.error === 'unauthenticated') session.clear(surface);
+      if (res.status === 401 && data.error === 'unauthenticated') {
+        session.clear(surface);
+        // Let the app show the sign-in screen instead of leaving a screen whose buttons all fail.
+        window.dispatchEvent(new CustomEvent(SIGNED_OUT_EVENT, { detail: surface }));
+      }
       throw new ApiError(res.status, data.error ?? 'error', data.message ?? res.statusText);
     }
     return data as T;

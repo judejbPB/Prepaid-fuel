@@ -1,7 +1,7 @@
 // BOUSOL service worker: keeps the app shell available offline.
 // API calls are never cached here; the employee app keeps its own copy of the last synced wallet.
-const CACHE = 'bousol-shell-v3';
-const SHELL = ['/', '/employee', '/station', '/manifest.webmanifest', '/station.webmanifest', '/icon.svg'];
+const CACHE = 'bousol-shell-v4';
+const SHELL = ['/', '/employee', '/station', '/manifest.webmanifest', '/station.webmanifest', '/icon.svg', '/alfa-logo.png'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

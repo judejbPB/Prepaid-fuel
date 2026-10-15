@@ -1,3 +1,4 @@
+import { BrandLogo } from '../ui';
 import { Link } from 'react-router-dom';
 
 const STEPS = [
@@ -19,7 +20,8 @@ export default function Home() {
   return (
     <div className="landing dark">
       <div className="inner">
-        <div className="eyebrow">BOUSOL · Prepaid fuel platform</div>
+        <BrandLogo large />
+        <div className="eyebrow" style={{ marginTop: 20 }}>Prepaid fuel platform · powered by BOUSOL</div>
         <h1>Prepaid Fuel Platform</h1>
         <p className="lede">
           A closed-loop fuel entitlement system that digitizes the voucher program. Every gourde stays traceable to
