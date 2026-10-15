@@ -1,0 +1,16 @@
+{
+  "name": "bousol-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Android shells for the BOUSOL station app and employee wallet (Capacitor).",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

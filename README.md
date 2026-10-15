@@ -188,9 +188,31 @@ On first boot with an empty database the server creates the distributor admin fr
 from the control center. Put it behind HTTPS (e.g. a reverse proxy or your host's TLS) and back up the
 `/data` volume. Do **not** run `npm run seed` in production: it wipes the database and loads demo data.
 
+## Android apps
+`mobile/` wraps the web app in two Android apps (Capacitor), built from one project as product flavors:
+
+| App | Package | Opens |
+|---|---|---|
+| BOUSOL Station | `ht.bousol.station` | `/station` (tablet or phone at the pump) |
+| BOUSOL Wallet | `ht.bousol.wallet` | `/employee` |
+
+Both block screenshots, screen recording and the recent-apps preview (`FLAG_SECURE`), ask for the camera
+for QR scanning, and keep working offline after the first launch (the web app's service worker). The
+GitHub Actions workflow `Android test build` builds both on every change under `mobile/` and publishes
+them as the `android-test` pre-release; run it by hand to point the apps at another server (`app_url`).
+
+Test builds are signed with `mobile/android/app/test-builds.keystore`, a public key that exists only so a
+new test APK installs over the previous one. Store releases must be signed with a private key
+(Play App Signing).
+
+To build locally (Android Studio or the Android SDK required):
+```bash
+cd mobile && npm ci && npx cap sync android && node scripts/flavor-configs.mjs
+cd android && ./gradlew assembleStationDebug assembleWalletDebug
+```
+
 ## Not yet built (pilot follow-ups)
-- Native Android packaging (Capacitor/TWA) to set `FLAG_SECURE` on QR screens, which blocks screenshots at
-  the OS level; and hardware-backed keys (Android Keystore) with biometric unlock alongside the PIN.
+- Hardware-backed keys (Android Keystore) with biometric unlock alongside the PIN, and a Play Store release.
 - Direct bank API feed (statement import is CSV upload today).
 - SMS/WhatsApp notifications, CSV roster import, report exports.
 - Production hardening: Postgres, rate limiting, secrets management, monitoring.

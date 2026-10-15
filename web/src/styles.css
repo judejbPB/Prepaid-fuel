@@ -167,8 +167,24 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--n
 .progress div { text-align: center; padding: 10px; border-radius: 10px; border: 1.5px solid var(--line); font-weight: 600; font-size: 14px; color: var(--muted); }
 .progress div.done { background: var(--ok-bg); border-color: var(--ok-bg); color: var(--ok); }
 .progress div.now { background: var(--amber); border-color: var(--amber); color: var(--navy); }
+/* Station on-screen keypad */
+.numfield-wrap { display: flex; flex-direction: column; gap: 6px; }
+.numfield-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.numfield { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; padding: 10px 14px;
+  background: #fff; color: var(--ink); border: 1.5px solid var(--line); border-radius: 10px; font-size: 18px; font-weight: 700; text-align: left; }
+.numfield.big { font-size: 24px; min-height: 56px; }
+.numfield.active { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(240, 163, 50, 0.3); }
+.numfield .placeholder { color: #a9a49a; font-weight: 600; }
+.numfield .suffix { font-size: 13px; color: var(--muted); font-weight: 600; }
+.keypad-panel { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.quick-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.quick-row .quick:focus { outline: none; }
+.quick-row .quick { background: var(--card); color: var(--navy); padding: 10px 4px; font-size: 14px; border-radius: 10px; }
+.station-keypad button { padding: 16px 0; font-size: 24px; font-weight: 700; touch-action: manipulation; }
+.station-keypad button:active { background: var(--amber); }
 .terminal-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 .qr-box { background: #fff; border-radius: 12px; padding: 12px; display: grid; place-items: center; text-align: center; gap: 8px; }
+.qr-box.pad { place-items: stretch; align-content: start; text-align: left; }
 .code { font-family: ui-monospace, Menlo, monospace; font-size: 20px; letter-spacing: 0.12em; font-weight: 700; }
 
 @media (max-width: 900px) {
