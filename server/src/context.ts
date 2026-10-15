@@ -26,6 +26,11 @@ export interface Config {
   offlinePackHours: number;
   /** Failed PIN attempts before the wallet locks. */
   maxPinFailures: number;
+  /**
+   * Demo only: terminal keys are derived from the terminal id and activation codes stay reusable, so a
+   * device stays signed in to its terminal when an in-memory demo database is re-seeded.
+   */
+  demoTerminals: boolean;
 }
 
 export const defaultConfig: Config = {
@@ -38,6 +43,7 @@ export const defaultConfig: Config = {
   offlinePerEmployeeMinor: 500_000,
   offlineTerminalMinor: 10_000_000,
   offlinePackHours: 24,
+  demoTerminals: false,
 };
 
 export function createCtx(path = ':memory:', config: Partial<Config> = {}): Ctx {

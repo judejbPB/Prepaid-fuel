@@ -17,11 +17,19 @@ export default function Station() {
   const [terminal, setTerminal] = useState(session.terminalInfo());
   const [managerMode, setManagerMode] = useState(false);
   if (!terminal && !managerMode) return <Activate onActivated={setTerminal} onManager={() => setManagerMode(true)} />;
+  const resetTerminal = () => { session.clearTerminal(); setTerminal(null); setManagerMode(false); };
   const extra = terminal
-    ? <div className="badge info">This device: {terminal.station_name} · {terminal.label}</div>
+    ? (
+      <div className="row">
+        <div className="badge info">This device: {terminal.station_name} · {terminal.label}</div>
+        <button type="button" className="ghost sm" onClick={resetTerminal}>Change terminal</button>
+      </div>
+    )
     : <div className="badge warn">Manager sign-in (no terminal on this device)</div>;
+  // The server no longer knows this device's terminal key: send the user back to activation.
+  const onLoginError = (e: ApiError) => { if (e.code === 'terminal_unknown' && terminal) resetTerminal(); };
   return (
-    <Authed surface="station" loginExtra={extra} offlineOk>
+    <Authed surface="station" loginExtra={extra} offlineOk onLoginError={onLoginError}>
       <StationHome />
     </Authed>
   );

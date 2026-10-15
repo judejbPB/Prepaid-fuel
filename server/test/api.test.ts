@@ -3,6 +3,7 @@ import { buildApp } from '../src/app.js';
 import { createCtx } from '../src/context.js';
 import { DEMO_PASSWORD, DEMO_PIN, seedDemo } from '../src/demo.js';
 import { SimulatedPhone } from '../src/phone-sim.js';
+import * as admin from '../src/services/admin.js';
 
 const ctx = createCtx(':memory:');
 const app = buildApp(ctx);
@@ -44,15 +45,38 @@ describe('api', () => {
   });
 
   it('attendants must sign in from an activated terminal at their station', async () => {
-    expect((await call('POST', '/api/auth/login', { body: { login: 'attendant2@bousol', password: DEMO_PASSWORD } })).status).toBe(403);
+    const noTerminal = await call('POST', '/api/auth/login', { body: { login: 'attendant2@bousol', password: DEMO_PASSWORD } });
+    expect(noTerminal).toMatchObject({ status: 403, json: { error: 'terminal_unknown' } });
     const { json } = await call('POST', '/api/terminals/activate', { body: { code: 'STATION2' } });
-    expect((await call('POST', '/api/terminals/activate', { body: { code: 'STATION2' } })).status).toBe(404); // single use
     const wrongStation = await call('POST', '/api/auth/login', {
       body: { login: 'attendant3@bousol', password: DEMO_PASSWORD }, headers: { 'x-terminal-key': json.terminalKey },
     });
-    expect(wrongStation.status).toBe(403);
+    expect(wrongStation).toMatchObject({ status: 403, json: { error: 'terminal_wrong_station' } });
+    expect(wrongStation.json.message).toContain('Station 2');
     const token = await signIn('attendant2@bousol', { 'x-terminal-key': json.terminalKey });
     expect(token).toBeTruthy();
+  });
+
+  it('demo terminals survive a re-seed (the hosted demo resets its in-memory database)', async () => {
+    const { json } = await call('POST', '/api/terminals/activate', { body: { code: 'STATION4' } });
+    const fresh = createCtx(':memory:');
+    seedDemo(fresh);
+    const reseeded = buildApp(fresh);
+    const res = await reseeded.inject({
+      method: 'POST', url: '/api/auth/login', payload: { login: 'attendant4@bousol', password: DEMO_PASSWORD },
+      headers: { 'x-terminal-key': json.terminalKey },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('outside the demo, activation codes are single use and keys are random', async () => {
+    const prod = createCtx(':memory:');
+    const station = admin.createStation(prod, null, { name: 'Prod station' });
+    const terminal = admin.createTerminal(prod, null, { stationId: station.id, label: 'T-1' });
+    const code = prod.db.get('SELECT activation_code FROM terminals WHERE id = ?', terminal.id).activation_code;
+    const out = admin.activateTerminal(prod, code);
+    expect(out.terminalKey).not.toBe(admin.demoTerminalKey(terminal.id));
+    expect(() => admin.activateTerminal(prod, code)).toThrow();
   });
 
   it('runs a full fueling over HTTP with device binding', async () => {
