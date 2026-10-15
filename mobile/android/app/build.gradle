@@ -26,14 +26,14 @@ android {
         station {
             dimension "app"
             applicationId "ht.bousol.station"
-            resValue "string", "app_name", "BOUSOL Station"
-            resValue "string", "title_activity_main", "BOUSOL Station"
+            resValue "string", "app_name", "ALFA Station"
+            resValue "string", "title_activity_main", "ALFA Station"
         }
         wallet {
             dimension "app"
             applicationId "ht.bousol.wallet"
-            resValue "string", "app_name", "BOUSOL Wallet"
-            resValue "string", "title_activity_main", "BOUSOL Wallet"
+            resValue "string", "app_name", "ALFA Wallet"
+            resValue "string", "title_activity_main", "ALFA Wallet"
         }
     }
     // Test builds only: a fixed, public debug key so a new test APK installs over the previous one.

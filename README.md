@@ -1,4 +1,4 @@
-# BOUSOL Prepaid Fuel Platform
+# ALFA Prepaid Fuel Platform, powered by BOUSOL
 
 A closed-loop fuel entitlement system that digitizes the corporate fuel voucher program.
 Balances are held in **currency (HTG)**; gallons are shown for reference at each company's contract price.

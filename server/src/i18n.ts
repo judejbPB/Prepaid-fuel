@@ -132,12 +132,12 @@ const EXACT: Record<string, string> = {
   'Session expired': 'Session expirée. Veuillez vous reconnecter.',
 
   // offline.ts
-  'This is not a BOUSOL approval code': 'Ce code n’est pas un code d’approbation BOUSOL',
+  'This is not an ALFA approval code': 'Ce code n’est pas un code d’approbation ALFA',
   'Unreadable approval code': 'Code d’approbation illisible',
   'Malformed approval code': 'Code d’approbation non valide',
   'Device key must be an EC P-256 public key': 'La clé de l’appareil doit être une clé publique EC P-256',
   'Invalid device public key': 'Clé publique de l’appareil invalide',
-  'Not a BOUSOL station code': 'Ce code n’est pas un code de station BOUSOL',
+  'Not an ALFA station code': 'Ce code n’est pas un code de station ALFA',
 
   // ledger.ts
   'Journal entry needs at least two non-zero lines': 'Une écriture doit comporter au moins deux lignes non nulles',
@@ -178,7 +178,14 @@ const EXACT: Record<string, string> = {
   // bank.ts
   'Statement needs a header row and at least one line': 'Le relevé doit contenir une ligne d’en-tête et au moins une ligne d’opération',
   'Statement needs at least "reference" and "amount" columns':
-    'Le relevé doit contenir au moins les colonnes « reference » et « amount »',
+    'Le relevé doit contenir au moins une colonne « Référence » et une colonne « Montant » (ou « Crédit »)',
+
+  // spreadsheet.ts
+  'This Excel file is damaged or not an .xlsx workbook': 'Ce fichier Excel est endommagé ou n’est pas un classeur .xlsx',
+  'This Excel file uses an unsupported compression': 'Ce fichier Excel utilise une compression non prise en charge',
+  'This Excel file has no worksheet': 'Ce fichier Excel ne contient aucune feuille',
+  'Old Excel format (.xls): open it in Excel and save it as .xlsx or CSV, then upload again':
+    'Ancien format Excel (.xls) : ouvrez-le dans Excel, enregistrez-le en .xlsx ou en CSV, puis téléversez-le de nouveau',
 
   // redemption.ts
   'Attendant must be signed in on a station terminal': 'Le pompiste doit être connecté sur un terminal de station',

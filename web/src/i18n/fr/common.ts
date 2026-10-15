@@ -95,7 +95,7 @@ export const fr: Record<string, string> = {
   'Station app': 'Application station',
   'Employee fuel wallet': 'Portefeuille carburant de l’employé',
   'That account can’t use the {app}.': 'Ce compte n’a pas accès à cet espace ({app}).',
-  'Prepaid fuel · powered by BOUSOL': 'Carburant prépayé · une solution BOUSOL',
+  'ALFA Prepaid fuel · powered by BOUSOL': 'ALFA Carburant prépayé · propulsé par BOUSOL',
   'Phone number': 'Numéro de téléphone',
   'Login': 'Identifiant',
   'Password': 'Mot de passe',
@@ -132,7 +132,7 @@ export const fr: Record<string, string> = {
   'Activate with {code} · {logins}': 'Activer avec {code} · {logins}',
   'Employee app': 'Application employé',
   'See your HTG balance, scan the station QR, approve with your PIN, get a receipt.': 'Consultez votre solde en HTG, scannez le QR de la station, approuvez avec votre code PIN, recevez un reçu.',
-  'Prepaid fuel platform · powered by BOUSOL': 'Plateforme de carburant prépayé · une solution BOUSOL',
+  'ALFA · Prepaid fuel platform · powered by BOUSOL': 'ALFA · Plateforme de carburant prépayé · propulsé par BOUSOL',
   'Prepaid Fuel Platform': 'Plateforme de carburant prépayé',
   'A closed-loop fuel entitlement system that digitizes the voucher program. Every gourde stays traceable to cleared funds; gallons are shown at the contract price for reference.':
     'Un système de droits au carburant en circuit fermé qui numérise le programme de bons. Chaque gourde reste traçable jusqu’aux fonds encaissés ; les gallons sont indiqués au prix contractuel, à titre indicatif.',
@@ -174,8 +174,10 @@ export const fr: Record<string, string> = {
   'Step 02 · Activate': 'Étape 02 · Activer',
   'Bank statements': 'Relevés bancaires',
   'Import a statement': 'Importer un relevé',
-  'CSV export from the bank with at least reference and amount columns (date and description optional). Credits whose description contains a funding reference (TR-xxxx) and the exact expected amount are matched automatically. A different approver still activates each lot.':
-    'Fichier CSV exporté de la banque, avec au moins les colonnes référence et montant (date et description facultatives). Les crédits dont la description contient une référence de financement (TR-xxxx) et le montant exact attendu sont rapprochés automatiquement. L’activation de chaque lot reste confiée à un autre approbateur.',
+  'Excel (.xlsx) or CSV statement downloaded from online banking, with at least a reference column and an amount or credit column (date and description optional). Credits whose description contains a funding reference (TR-xxxx) and the exact expected amount are matched automatically. A different approver still activates each lot.':
+    'Relevé Excel (.xlsx) ou CSV téléchargé depuis la banque en ligne, avec au moins une colonne de référence et une colonne de montant ou de crédit (date et libellé facultatifs). Les crédits dont le libellé contient une référence de financement (TR-xxxx) et le montant exact attendu sont rapprochés automatiquement. Un autre approbateur doit toujours activer chaque lot.',
+  'Excel file ready: {name}': 'Fichier Excel prêt : {name}',
+  'Remove': 'Retirer',
   'Paste sample': 'Coller un exemple',
   '…or paste CSV here': '…ou collez le CSV ici',
   'Import and match': 'Importer et rapprocher',

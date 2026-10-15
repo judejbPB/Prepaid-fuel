@@ -154,7 +154,7 @@ const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.e
 export async function authorizeLocal(pack: OfflinePack, r: LocalRequest, raw: string): Promise<LocalRequest> {
   if (!packUsable(pack)) throw new OfflineError(t('The offline pack has expired. Reconnect to refresh it.'));
   if (r.status !== 'pending' || Date.parse(r.expires_at) < Date.now()) throw new OfflineError(t('This request is no longer open'));
-  if (!raw.startsWith(RESPONSE_PREFIX)) throw new OfflineError(t('This is not a BOUSOL approval code'));
+  if (!raw.startsWith(RESPONSE_PREFIX)) throw new OfflineError(t('This is not an ALFA approval code'));
   let tok: any;
   try { tok = JSON.parse(new TextDecoder().decode(fromB64url(raw.slice(RESPONSE_PREFIX.length)))); } catch { throw new OfflineError(t('Unreadable approval code')); }
   if (tok.c !== r.code) throw new OfflineError(t('This approval was made for a different request'));

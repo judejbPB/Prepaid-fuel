@@ -59,7 +59,7 @@ export const tokenMessage = (t: Pick<ResponseToken, 'c' | 'n' | 'e' | 'k' | 't' 
 
 export function decodeResponse(raw: string): ResponseToken {
   const s = raw.trim();
-  if (!s.startsWith(RESPONSE_PREFIX)) throw badRequest('bad_token', 'This is not a BOUSOL approval code');
+  if (!s.startsWith(RESPONSE_PREFIX)) throw badRequest('bad_token', 'This is not an ALFA approval code');
   let t: any;
   try {
     t = JSON.parse(Buffer.from(s.slice(RESPONSE_PREFIX.length), 'base64url').toString('utf8'));
@@ -115,7 +115,7 @@ export const PIN_KDF = { hash: 'SHA-256', iterations: 150_000, bytes: 32 } as co
 
 export function decodeChallenge(raw: string): Challenge {
   const s = raw.trim();
-  if (!s.startsWith(CHALLENGE_PREFIX)) throw badRequest('bad_challenge', 'Not a BOUSOL station code');
+  if (!s.startsWith(CHALLENGE_PREFIX)) throw badRequest('bad_challenge', 'Not an ALFA station code');
   return JSON.parse(Buffer.from(s.slice(CHALLENGE_PREFIX.length), 'base64url').toString('utf8'));
 }
 

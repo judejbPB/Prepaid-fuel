@@ -225,7 +225,7 @@ function Login({ surface, onDone, extra, onError }: { surface: Surface; onDone: 
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
         <div className="row between"><BrandLogo large /><LangToggle /></div>
-        <div className="eyebrow">{t('Prepaid fuel · powered by BOUSOL')}</div>
+        <div className="eyebrow">{t('ALFA Prepaid fuel · powered by BOUSOL')}</div>
         <h1>{SURFACE_TITLE[surface]}</h1>
         {extra}
         <label>{surface === 'employee' ? t('Phone number') : t('Login')}

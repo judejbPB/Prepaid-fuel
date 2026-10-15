@@ -95,6 +95,6 @@ export const fr: Record<string, string> = {
   'Receipts open when you’re back online.': 'Les reçus seront disponibles dès votre retour en ligne.',
 
   // Errors from offline.ts
-  'This is not a BOUSOL station code': 'Ce n’est pas un code de station BOUSOL',
+  'This is not an ALFA station code': 'Ce n’est pas un code de station ALFA',
   'This phone is not enrolled': 'Ce téléphone n’est pas enregistré',
 };

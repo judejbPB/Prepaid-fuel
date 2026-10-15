@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { actorFor, type Actor } from '../src/auth.js';
 import { createCtx, type Ctx } from '../src/context.js';
@@ -9,6 +10,7 @@ import * as exc from '../src/services/exceptions.js';
 import * as funding from '../src/services/funding.js';
 import * as red from '../src/services/redemption.js';
 import * as refunds from '../src/services/refunds.js';
+import { readXlsx } from '../src/services/spreadsheet.js';
 import { decodeResponse, encodeResponse } from '../src/offline.js';
 import { SimulatedPhone } from '../src/phone-sim.js';
 
@@ -427,6 +429,16 @@ describe('bank statement import', () => {
 
     const line = ctx.db.get("SELECT id FROM bank_transactions WHERE bank_reference = 'UNI-2'");
     expect(() => bank.matchTransaction(ctx, t.treasury, line.id, f2.id)).toThrow(/does not equal/);
+  });
+
+  it('imports an Excel statement with a title block and French column names', () => {
+    const f = funding.createFunding(ctx, t.preparer, { companyId: t.company.id, amountMinor: HTG(10_000) });
+    const rows = readXlsx(readFileSync(new URL('./fixtures/releve-banque.xlsx', import.meta.url)))
+      .map((r) => r.map((c) => c.replace('TR-REF1', f.reference)));
+    const out = bank.importStatement(ctx, t.treasury, rows);
+    expect(out).toMatchObject({ imported: 2, skipped: 1, matched: [f.reference], unmatched: 1 });
+    const line = ctx.db.get("SELECT * FROM bank_transactions WHERE bank_reference = 'UNI-X3'");
+    expect(line).toMatchObject({ value_date: '2026-10-14', amount_minor: 500_050, memo: 'Dépôt sans référence' });
   });
 
   it('parses European and currency-prefixed amounts', () => {
