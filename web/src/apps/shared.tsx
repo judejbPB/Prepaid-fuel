@@ -11,6 +11,7 @@ export function ExceptionsPanel({ surface, onlyOpen = true }: { surface: Surface
   const [showAll, setShowAll] = useState(!onlyOpen);
   const { data, reload } = useLoad(() => api(surface).get(`/api/exceptions${showAll ? '' : '?status=open'}`), [showAll], 15000);
   const [proposing, setProposing] = useState<any>(null);
+  const [replying, setReplying] = useState<any>(null);
   const { busy, run } = useAction();
   const canDecide = me.role === 'dist_approver' || me.role === 'dist_admin';
   const canPropose = me.role === 'st_manager' || DIST.includes(me.role);
@@ -55,6 +56,11 @@ export function ExceptionsPanel({ surface, onlyOpen = true }: { surface: Surface
               </div>
             )}
             {e.kind === 'dispute' && e.detail && <p className="small" style={{ marginTop: 6 }}>{t('Employee says: “{text}”', { text: String(e.detail) })}</p>}
+            {e.messages?.map((m: any) => (
+              <p key={m.id} className="small" style={{ marginTop: 4 }}>
+                <span className="muted">{t('Reply sent by {name}, {when}:', { name: m.author_name ?? '—', when: when(m.created_at) })}</span> {m.body}
+              </p>
+            ))}
             {e.proposal && (
               <p className="small" style={{ marginTop: 6 }}>
                 {t('Proposal by {name}:', { name: e.proposed_by_name })} <b>{cap(e.proposal.action)}</b>
@@ -65,6 +71,9 @@ export function ExceptionsPanel({ surface, onlyOpen = true }: { surface: Surface
             <div className="row" style={{ marginTop: 10 }}>
               {canPropose && e.status === 'open' && e.kind !== 'adjustment' && (
                 <button className="sm" onClick={() => setProposing(e)}>{e.kind === 'shift_variance' ? t('Explain') : t('Propose resolution')}</button>
+              )}
+              {canPropose && e.kind === 'dispute' && e.status !== 'rejected' && (
+                <button className="sm ghost" onClick={() => setReplying(e)}>{t('Reply to employee')}</button>
               )}
               {canDecide && e.status === 'proposed' && (
                 <>
@@ -80,6 +89,7 @@ export function ExceptionsPanel({ surface, onlyOpen = true }: { surface: Surface
         ))}
       </div>
       {proposing && <ProposeModal surface={surface} ex={proposing} onClose={() => setProposing(null)} onDone={() => { setProposing(null); reload(); }} />}
+      {replying && <DisputeReply surface={surface} ex={replying} onClose={() => setReplying(null)} onDone={() => { setReplying(null); reload(); }} />}
     </div>
   );
 }
@@ -115,6 +125,64 @@ function ProposeModal({ surface, ex, onClose, onDone }: { surface: Surface; ex: 
         </label>
         <p className="small muted">{t('A different distributor approver must approve before anything posts to the ledger.')}</p>
         <button disabled={busy || note.length < 3 || (action === 'reverse' && !(Number(amount) > 0))} onClick={submit}>{t('Submit')}</button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Reply to the employee who raised a dispute, with optional AI help: a summary of the facts, what to check, a
+ * suggested outcome (advice only) and reply drafts in French and Kreyòl that staff edit before sending. */
+function DisputeReply({ surface, ex, onClose, onDone }: { surface: Surface; ex: any; onClose: () => void; onDone: () => void }) {
+  const [help, setHelp] = useState<any>(null);
+  const [lang, setLang] = useState<'fr' | 'ht'>('fr');
+  const [text, setText] = useState('');
+  const { busy, run } = useAction();
+  const analyse = async () => {
+    const out = await run(() => api(surface).post(`/api/exceptions/${ex.id}/ai-summary`));
+    if (out) { setHelp(out); if (!text.trim()) setText(out.replies[lang]); }
+  };
+  const pick = (l: 'fr' | 'ht') => { setLang(l); if (help) setText(help.replies[l]); };
+  const send = async () => {
+    if (await run(() => api(surface).post(`/api/exceptions/${ex.id}/reply`, { text }), t('Reply sent to the employee'))) onDone();
+  };
+  const s = help?.suggestion;
+  return (
+    <Modal title={t('Reply to employee')} onClose={onClose}>
+      <div className="stack">
+        <p className="small muted">{ex.summary}</p>
+        {ex.detail && <p className="small">{t('Employee says: “{text}”', { text: String(ex.detail) })}</p>}
+        <div className="card">
+          <div className="row between">
+            <strong className="small">{t('AI summary')}</strong>
+            <button className="sm ghost" disabled={busy} onClick={analyse}>{busy && !help ? t('Reading…') : help ? t('Ask again') : t('Analyse with AI')}</button>
+          </div>
+          {!help && <p className="small muted">{t('AI reads the fueling, its shift and earlier disputes, then drafts a reply in French and Kreyòl. It decides nothing: a refund or rejection still goes through Propose resolution and a second approver.')}</p>}
+          {help && (
+            <>
+              <ul className="small" style={{ margin: '8px 0', paddingLeft: 18 }}>{help.summary.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul>
+              {help.checks.length > 0 && <><strong className="small">{t('To check')}</strong>
+                <ul className="small" style={{ margin: '4px 0', paddingLeft: 18 }}>{help.checks.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></>}
+              <p className="small" style={{ margin: 0 }}>
+                <span className={`badge ${s.action === 'refund' ? 'ok' : s.action === 'reject' ? 'bad' : 'warn'}`}>
+                  {s.action === 'refund' ? (s.amountMinor ? t('Suggests a refund of {amount}', { amount: money(s.amountMinor) }) : t('Suggests a refund'))
+                    : s.action === 'reject' ? t('Suggests rejecting') : t('Suggests checking further')}
+                </span>{' '}{s.why}
+              </p>
+            </>
+          )}
+        </div>
+        <div className="row between">
+          <strong className="small">{t('Message to the employee')}</strong>
+          {help && (
+            <div className="seg">
+              <button className={lang === 'fr' ? 'on' : ''} onClick={() => pick('fr')}>Français</button>
+              <button className={lang === 'ht' ? 'on' : ''} onClick={() => pick('ht')}>Kreyòl</button>
+            </div>
+          )}
+        </div>
+        <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={t('Write to the employee, or start from the AI draft.')} />
+        <p className="small muted">{t('The employee sees this message on their dispute in the wallet. Read it before sending.')}</p>
+        <button disabled={busy || text.trim().length < 3} onClick={send}>{t('Send to employee')}</button>
       </div>
     </Modal>
   );

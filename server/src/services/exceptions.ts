@@ -23,7 +23,11 @@ export function getException(ctx: Ctx, id: number) {
     id,
   );
   if (!e) throw notFound('Exception');
-  return { ...e, proposal: e.proposal_json ? JSON.parse(e.proposal_json) : null, detail: e.detail ? safeJson(e.detail) : null };
+  // Replies to the employee who raised a dispute (dispute-ai.ts); shown to them in the wallet.
+  const messages = e.kind === 'dispute'
+    ? ctx.db.all('SELECT m.id, m.body, m.created_at, u.name AS author_name FROM dispute_messages m LEFT JOIN users u ON u.id = m.author_id WHERE m.exception_id = ? ORDER BY m.id', id)
+    : [];
+  return { ...e, proposal: e.proposal_json ? JSON.parse(e.proposal_json) : null, detail: e.detail ? safeJson(e.detail) : null, messages };
 }
 
 const safeJson = (s: string) => { try { return JSON.parse(s); } catch { return s; } };

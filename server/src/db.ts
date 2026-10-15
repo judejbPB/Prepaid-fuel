@@ -217,6 +217,15 @@ BEGIN SELECT RAISE(ABORT, 'journal is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS journal_entries_no_delete BEFORE DELETE ON journal_entries
 BEGIN SELECT RAISE(ABORT, 'journal is append-only'); END;
 
+-- Messages from the station or distributor to the employee who raised a dispute.
+CREATE TABLE IF NOT EXISTS dispute_messages (
+  id INTEGER PRIMARY KEY,
+  exception_id INTEGER NOT NULL REFERENCES exceptions(id),
+  author_id INTEGER REFERENCES users(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Suspicious fueling alerts for a person to review (services/fuel-alerts.ts). One row per pattern (dedupe_key).
 CREATE TABLE IF NOT EXISTS fuel_alerts (
   id INTEGER PRIMARY KEY,

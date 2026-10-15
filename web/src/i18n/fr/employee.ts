@@ -11,6 +11,7 @@ export const fr: Record<string, string> = {
   'Show this to the attendant': 'Montrez ce code au pompiste',
   'What went wrong?': 'Quel est le problème ?',
   'My disputes': 'Mes contestations',
+  'Message from {name}, {when}:': 'Message de {name}, {when} :',
 
   // Wallet loading and states
   'Loading your wallet…': 'Chargement de votre portefeuille…',

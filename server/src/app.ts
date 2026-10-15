@@ -12,6 +12,7 @@ import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
 import * as alerts from './services/fuel-alerts.js';
 import * as bankAi from './services/bank-ai.js';
+import * as disputeAi from './services/dispute-ai.js';
 import * as statementAi from './services/statement-ai.js';
 import * as sage from './services/sage.js';
 import { readXlsx } from './services/spreadsheet.js';
@@ -314,6 +315,10 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
       ]), req);
       return exc.propose(ctx, req.actor, params(req), proposal);
     });
+    // AI summary and reply drafts for a dispute (changes nothing), and replies sent to the employee.
+    api.post('/api/exceptions/:id/ai-summary', async (req) => disputeAi.adviseOnDispute(ctx, req.actor, params(req), requestLang(req.headers)));
+    api.post('/api/exceptions/:id/reply', async (req) =>
+      disputeAi.replyToDispute(ctx, req.actor, params(req), body(z.object({ text: z.string().trim().min(3).max(2000) }), req).text));
     api.post('/api/exceptions/:id/decide', async (req) => {
       const input = body(z.object({ approve: z.boolean(), note: z.string().optional() }), req);
       return exc.decide(ctx, req.actor, params(req), input.approve, input.note);
