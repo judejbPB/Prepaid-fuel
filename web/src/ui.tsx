@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { api, ApiError, session, SIGNED_OUT_EVENT, type Surface } from './api';
+import { api, ApiError, cap, session, SIGNED_OUT_EVENT, type Surface } from './api';
+import { t } from './i18n';
+import { LangToggle } from './i18n/LangToggle';
 
 // ---------------------------------------------------------------- data hooks
 
@@ -82,31 +84,31 @@ export const Kpi = ({ label, value, sub, bad }: { label: string; value: ReactNod
 );
 
 const STATUS: Record<string, [string, string]> = {
-  awaiting_bank: ['warn', 'Awaiting bank'],
-  matched: ['ok', 'Matched'],
-  approved: ['ok', 'Approved'],
-  rejected: ['bad', 'Rejected'],
-  draft: ['info', 'Draft'],
-  pending_approval: ['warn', 'Needs approver'],
-  posted: ['ok', 'Posted'],
-  ready: ['ok', 'Ready'],
-  held: ['warn', 'Held for review'],
-  open: ['warn', 'Open'],
-  proposed: ['info', 'Awaiting decision'],
-  resolved: ['ok', 'Resolved'],
-  closed: ['ok', 'Closed'],
-  accepted: ['ok', 'Accepted'],
-  pending: ['warn', 'Waiting for employee'],
-  completed: ['ok', 'Redeemed'],
-  cancelled: ['', 'Cancelled'],
-  expired: ['', 'Expired'],
-  active: ['ok', 'Active'],
-  paused: ['warn', 'Paused'],
-  frozen: ['bad', 'Frozen'],
-  inactive: ['', 'Inactive'],
+  awaiting_bank: ['warn', t('Awaiting bank')],
+  matched: ['ok', t('Matched')],
+  approved: ['ok', t('Approved')],
+  rejected: ['bad', t('Rejected')],
+  draft: ['info', t('Draft')],
+  pending_approval: ['warn', t('Needs approver')],
+  posted: ['ok', t('Posted')],
+  ready: ['ok', t('Ready')],
+  held: ['warn', t('Held for review')],
+  open: ['warn', t('Open')],
+  proposed: ['info', t('Awaiting decision')],
+  resolved: ['ok', t('Resolved')],
+  closed: ['ok', t('Closed')],
+  accepted: ['ok', t('Accepted')],
+  pending: ['warn', t('Waiting for employee')],
+  completed: ['ok', t('Redeemed')],
+  cancelled: ['', t('Cancelled')],
+  expired: ['', t('Expired')],
+  active: ['ok', t('Active')],
+  paused: ['warn', t('Paused')],
+  frozen: ['bad', t('Frozen')],
+  inactive: ['', t('Inactive')],
 };
 export const Status = ({ s }: { s: string }) => {
-  const [cls, label] = STATUS[s] ?? ['', s];
+  const [cls, label] = STATUS[s] ?? ['', cap(s)];
   return <span className={`badge ${cls}`}>{label}</span>;
 };
 
@@ -114,7 +116,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
-        <div className="row between"><h2>{title}</h2><button className="ghost" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="row between"><h2>{title}</h2><button className="ghost" onClick={onClose} aria-label={t('Close')}>✕</button></div>
         {children}
       </div>
     </div>
@@ -188,17 +190,17 @@ export function Authed({ surface, children, loginExtra, offlineOk, onLoginError 
   }, [surface, offlineOk]);
   if (!checked) return null;
   if (!me) {
-    const notice = expired ? <div className="banner">Your session ended. Sign in again to continue.</div> : null;
+    const notice = expired ? <div className="banner">{t('Your session ended. Sign in again to continue.')}</div> : null;
     return <Login surface={surface} onDone={() => { setExpired(false); load(); }} extra={<>{notice}{loginExtra}</>} onError={onLoginError} />;
   }
   return <MeCtx.Provider value={me}>{children}</MeCtx.Provider>;
 }
 
 const SURFACE_TITLE: Record<Surface, string> = {
-  distributor: 'Distributor control center',
-  corporate: 'Corporate client portal',
-  station: 'Station app',
-  employee: 'Employee fuel wallet',
+  distributor: t('Distributor control center'),
+  corporate: t('Corporate client portal'),
+  station: t('Station app'),
+  employee: t('Employee fuel wallet'),
 };
 
 function Login({ surface, onDone, extra, onError }: { surface: Surface; onDone: () => void; extra?: ReactNode; onError?: (e: ApiError) => void }) {
@@ -213,7 +215,7 @@ function Login({ surface, onDone, extra, onError }: { surface: Surface; onDone: 
     }));
     if (!res) return;
     if (!SURFACE_ROLES[surface].includes(res.actor.role)) {
-      alert(`That account can’t use the ${SURFACE_TITLE[surface]}.`);
+      alert(t('That account can’t use the {app}.', { app: SURFACE_TITLE[surface] }));
       return;
     }
     session.setToken(surface, res.token);
@@ -222,19 +224,19 @@ function Login({ surface, onDone, extra, onError }: { surface: Surface; onDone: 
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <BrandLogo large />
-        <div className="eyebrow">Prepaid fuel · powered by BOUSOL</div>
+        <div className="row between"><BrandLogo large /><LangToggle /></div>
+        <div className="eyebrow">{t('Prepaid fuel · powered by BOUSOL')}</div>
         <h1>{SURFACE_TITLE[surface]}</h1>
         {extra}
-        <label>{surface === 'employee' ? 'Phone number' : 'Login'}
+        <label>{surface === 'employee' ? t('Phone number') : t('Login')}
           <input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" required
             inputMode={surface === 'employee' ? 'tel' : undefined} />
         </label>
-        <label>Password
+        <label>{t('Password')}
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         </label>
-        <button disabled={busy}>Sign in</button>
-        <a href="/" className="small muted">← All apps</a>
+        <button disabled={busy}>{t('Sign in')}</button>
+        <a href="/" className="small muted">{t('← All apps')}</a>
       </form>
     </div>
   );
@@ -250,10 +252,10 @@ export function useLogout(surface: Surface) {
 }
 
 const ROLE_LABEL: Record<string, string> = {
-  dist_admin: 'Administrator', dist_treasury: 'Treasury', dist_approver: 'Approver',
-  co_preparer: 'Preparer', co_approver: 'Approver', st_manager: 'Station manager', st_attendant: 'Attendant', employee: 'Employee',
+  dist_admin: t('Administrator'), dist_treasury: t('Treasury'), dist_approver: t('Approver'),
+  co_preparer: t('Preparer'), co_approver: t('Approver'), st_manager: t('Station manager'), st_attendant: t('Attendant'), employee: t('Employee'),
 };
-export const roleLabel = (r: string) => ROLE_LABEL[r] ?? r;
+export const roleLabel = (r: string) => ROLE_LABEL[r] ?? cap(r);
 
 export function Shell({ surface, nav, children }: { surface: Surface; nav: [string, string][]; children: ReactNode }) {
   const me = useMe();
@@ -268,7 +270,8 @@ export function Shell({ surface, nav, children }: { surface: Surface; nav: [stri
         <div className="who">
           <b>{me.name}</b>
           {roleLabel(me.role)}{me.company ? ` · ${me.company.name}` : ''}{me.station ? ` · ${me.station.name}` : ''}
-          <div><button className="ghost sm" style={{ color: 'var(--accent-on-dark)', paddingLeft: 0 }} onClick={logout}>Sign out</button></div>
+          <div><button className="ghost sm" style={{ color: 'var(--accent-on-dark)', paddingLeft: 0 }} onClick={logout}>{t('Sign out')}</button></div>
+          <div style={{ marginTop: 8 }}><LangToggle dark /></div>
         </div>
       </nav>
       <main className="main">{children}</main>

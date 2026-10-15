@@ -1,3 +1,5 @@
+import { lang, locale, t } from './i18n';
+
 export type Surface = 'distributor' | 'corporate' | 'station' | 'employee';
 
 const tokenKey = (s: Surface) => `bousol.token.${s}`;
@@ -38,7 +40,8 @@ export class ApiError extends Error {
 
 export function api(surface: Surface) {
   async function request<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = { 'x-device-id': session.deviceId() };
+    // x-lang: the server answers error messages in the user's language.
+    const headers: Record<string, string> = { 'x-device-id': session.deviceId(), 'x-lang': lang };
     const token = session.token(surface);
     if (token) headers.authorization = `Bearer ${token}`;
     const tk = session.terminalKey();
@@ -68,14 +71,18 @@ export function api(surface: Surface) {
 
 // ---- formatting
 export const gal = (mgal: number | null | undefined, digits = 0) =>
-  `${((mgal ?? 0) / 1000).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: Math.max(digits, 1) })}`;
+  `${((mgal ?? 0) / 1000).toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: Math.max(digits, 1) })}`;
 export const money = (minor: number | null | undefined, currency = 'HTG') =>
-  `${((minor ?? 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-export const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  `${((minor ?? 0) / 100).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+/**
+ * Display form of a stored enum value (fuel grade, status, role…): capitalised, then translated. Every value
+ * the server can send has an entry in i18n/fr/common.ts.
+ */
+export const cap = (s: string) => (s ? t(s[0].toUpperCase() + s.slice(1).replace(/_/g, ' ')) : s);
 export const when = (iso: string | null | undefined) => {
   if (!iso) return '—';
   const d = new Date(iso.replace(' ', 'T') + (iso.includes('Z') ? '' : 'Z'));
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 export const date = (iso: string | null | undefined) =>
-  iso ? new Date(iso.slice(0, 10) + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  iso ? new Date(iso.slice(0, 10) + 'T00:00:00').toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';

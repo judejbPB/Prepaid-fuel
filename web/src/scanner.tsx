@@ -1,5 +1,6 @@
 import jsQR from 'jsqr';
 import { useEffect, useRef, useState } from 'react';
+import { t } from './i18n';
 
 /**
  * Camera QR scanner. Calls onResult once per distinct code that starts with `prefix`.
@@ -41,28 +42,28 @@ export function QrScanner({ prefix, onResult, facing = 'environment', label }: {
       raf = requestAnimationFrame(tick);
     };
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCamError('Camera unavailable on this device.');
+      setCamError(t('Camera unavailable on this device.'));
     } else {
       navigator.mediaDevices.getUserMedia({ video: { facingMode: facing } })
         .then((s) => {
-          if (stopped) { s.getTracks().forEach((t) => t.stop()); return; }
+          if (stopped) { s.getTracks().forEach((tr) => tr.stop()); return; }
           stream = s;
           if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); }
           raf = requestAnimationFrame(tick);
         })
-        .catch(() => setCamError('Camera unavailable. Allow camera access, or paste the code below.'));
+        .catch(() => setCamError(t('Camera unavailable. Allow camera access, or paste the code below.')));
     }
-    return () => { stopped = true; cancelAnimationFrame(raf); stream?.getTracks().forEach((t) => t.stop()); };
+    return () => { stopped = true; cancelAnimationFrame(raf); stream?.getTracks().forEach((tr) => tr.stop()); };
   }, [prefix, facing]);
 
   return (
     <div className="stack">
-      {!camError && <div className="scanner"><video ref={videoRef} playsInline muted aria-label={label ?? 'Camera'} /></div>}
+      {!camError && <div className="scanner"><video ref={videoRef} playsInline muted aria-label={label ?? t('Camera')} /></div>}
       {camError && <div className="banner">{camError}</div>}
       <details className="small">
-        <summary className="muted">Enter code manually</summary>
-        <textarea rows={3} className="mono" aria-label="Paste code" value={manual} onChange={(e) => setManual(e.target.value.trim())} placeholder={`${prefix}…`} />
-        <button className="sm secondary mt" disabled={!manual.startsWith(prefix)} onClick={() => { cb.current(manual); setManual(''); }}>Use code</button>
+        <summary className="muted">{t('Enter code manually')}</summary>
+        <textarea rows={3} className="mono" aria-label={t('Paste code')} value={manual} onChange={(e) => setManual(e.target.value.trim())} placeholder={`${prefix}…`} />
+        <button className="sm secondary mt" disabled={!manual.startsWith(prefix)} onClick={() => { cb.current(manual); setManual(''); }}>{t('Use code')}</button>
       </details>
     </div>
   );

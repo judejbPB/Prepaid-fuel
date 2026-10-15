@@ -229,3 +229,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--n
 @media (prefers-reduced-motion: reduce) { .live-bar > div { animation-duration: 3s; } }
 .rotate-bar { height: 4px; background: var(--card); border-radius: 999px; overflow: hidden; width: 100%; }
 .rotate-bar > div { height: 100%; background: var(--navy-3); transition: width 0.25s linear; }
+
+/* Language switch */
+.lang-toggle { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px; overflow: hidden; background: #fff; }
+.lang-toggle button { background: transparent; color: var(--muted); border-radius: 0; padding: 4px 10px; font-size: 12px; font-weight: 700; }
+.lang-toggle button.on { background: var(--navy); color: #fff; }
+.lang-toggle.dark { border-color: var(--navy-2); background: transparent; }
+.lang-toggle.dark button { color: #d2d1ea; }
+.lang-toggle.dark button.on { background: #fff; color: var(--navy); }

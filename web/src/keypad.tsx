@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 // On-screen number pad for the station terminal. Fields are display boxes, not <input>s, so the
 // Android keyboard never opens and covers the screen: the attendant taps a field, then types here.
 
@@ -48,11 +50,11 @@ export function Keypad({ value, onChange, decimals, maxDigits, quick, quickLabel
       )}
       <div className="keypad station-keypad">
         {KEYS.map((k) => (
-          <button key={k} type="button" disabled={k === '.' && decimals === 0} aria-label={k === '⌫' ? 'Delete' : k}
+          <button key={k} type="button" disabled={k === '.' && decimals === 0} aria-label={k === '⌫' ? t('Delete') : k}
             onClick={() => onChange(press(value, k, decimals, maxDigits))}>{k}</button>
         ))}
       </div>
-      <button type="button" className="ghost sm" onClick={() => onChange('')}>Clear</button>
+      <button type="button" className="ghost sm" onClick={() => onChange('')}>{t('Clear')}</button>
     </div>
   );
 }
