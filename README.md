@@ -32,7 +32,7 @@ Production-style: `npm run build && npm start` serves the API and the built web 
 | Role | Login |
 |---|---|
 | Distributor admin / treasury / approver | `admin@bousol`, `treasury@bousol`, `approver@bousol` |
-| Company A preparer / approver | `prep@companya`, `approve@companya` |
+| Entreprise A preparer / approver | `prep@companya`, `approve@companya` |
 | Station attendants (need the terminal activated first) | `attendant1@bousol` … `attendant4@bousol` |
 | Station managers | `manager1@bousol` … `manager4@bousol` |
 | Employees (phone number; choose a PIN on first sign-in) | `50937000001` (Jean P.), `50937000002` (Marie L.) |

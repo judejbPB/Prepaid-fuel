@@ -38,10 +38,10 @@ describe('api', () => {
 
   it('keeps company data separate', async () => {
     const tokenB = await signIn('prep@companyb');
-    const companyA = ctx.db.get("SELECT id FROM companies WHERE name = 'Company A'");
+    const companyA = ctx.db.get("SELECT id FROM companies WHERE name = 'Entreprise A'");
     expect((await call('GET', `/api/companies/${companyA.id}/employees`, { token: tokenB })).status).toBe(403);
     const funding = (await call('GET', '/api/funding', { token: tokenB })).json;
-    expect(funding.every((f: any) => f.company_name === 'Company B')).toBe(true);
+    expect(funding.every((f: any) => f.company_name === 'Entreprise B')).toBe(true);
   });
 
   it('attendants must sign in from an activated terminal at their station', async () => {
