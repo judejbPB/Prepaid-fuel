@@ -1,0 +1,75 @@
+name: Android test build
+
+# Builds the two Android apps (BOUSOL Station and BOUSOL Wallet) and publishes them as the
+# "android-test" pre-release, so testers can download the APKs straight onto a phone.
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['mobile/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: Server the apps open (no trailing slash)
+        default: https://bousol-prepaid-fuel.vercel.app
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      APP_URL: ${{ inputs.app_url || 'https://bousol-prepaid-fuel.vercel.app' }}
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Install Capacitor
+        run: npm ci
+      - name: Sync web shell and per-app configs
+        run: |
+          npx cap sync android
+          node scripts/flavor-configs.mjs
+      - name: Build APKs
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleStationDebug assembleWalletDebug
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/station/debug/app-station-debug.apk dist/BOUSOL-Station.apk
+          cp android/app/build/outputs/apk/wallet/debug/app-wallet-debug.apk dist/BOUSOL-Wallet.apk
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bousol-android-${{ github.run_number }}
+          path: mobile/dist/*.apk
+      - name: Publish the android-test pre-release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-test --yes --cleanup-tag || true
+          gh release create android-test dist/*.apk --prerelease --target "$GITHUB_SHA" \
+            --title "Android test build #${{ github.run_number }}" \
+            --notes "Test builds for Android phones and tablets. They open $APP_URL. Install: download the APK on the device, open it and allow installing from this source. Screenshots are blocked inside the apps on purpose."

@@ -2,6 +2,7 @@ import QRCode from 'qrcode';
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, cap, gal, money, session, when } from '../api';
 import { RESPONSE_PREFIX } from '../offline';
+import { Keypad, NumField } from '../keypad';
 import { QrScanner } from '../scanner';
 import {
   authorizeLocal, cancelLocal, completeLocal, createLocalRequest, isLocal, offlineStore, packUsable,
@@ -213,6 +214,7 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
   const [dispMode, setDispMode] = useState<'amount' | 'gallons'>('amount');
   const [dispensed, setDispensed] = useState('');
   const [qr, setQr] = useState('');
+  const [field, setField] = useState<'pump' | 'qty'>('qty');
   const { busy, run } = useAction();
 
   useEffect(() => {
@@ -266,17 +268,15 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
             </div>
             <div className="small muted mt">Customer asks for</div>
             <div className="seg" style={{ marginTop: 6 }}>
-              <button className={qtyMode === 'amount' ? 'on' : ''} onClick={() => setQtyMode('amount')}>An amount (HTG)</button>
-              <button className={qtyMode === 'gallons' ? 'on' : ''} onClick={() => setQtyMode('gallons')}>Gallons</button>
+              <button className={qtyMode === 'amount' ? 'on' : ''} onClick={() => { setQtyMode('amount'); setQty(''); setField('qty'); }}>An amount (HTG)</button>
+              <button className={qtyMode === 'gallons' ? 'on' : ''} onClick={() => { setQtyMode('gallons'); setQty(''); setField('qty'); }}>Gallons</button>
             </div>
-            <div className="grid g2 mt">
-              <label>Pump<input type="number" min="1" value={pump} onChange={(e) => setPump(e.target.value)} /></label>
-              <label>{qtyMode === 'amount' ? 'Amount (HTG)' : 'Quantity (gal)'}
-                <input type="number" step={qtyMode === 'amount' ? '1' : '0.1'} min="0" value={qty} onChange={(e) => setQty(e.target.value)}
-                  placeholder={qtyMode === 'amount' ? '2000' : '12.0'} style={{ fontSize: 22, fontWeight: 700 }} /></label>
+            <div className="grid mt" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)' }}>
+              <NumField label="Pump" value={pump} active={field === 'pump'} onSelect={() => setField('pump')} testId="field-pump" />
+              <NumField label={qtyMode === 'amount' ? 'Amount' : 'Quantity'} value={qty} placeholder={qtyMode === 'amount' ? '2000' : '12.0'}
+                suffix={qtyMode === 'amount' ? 'HTG' : 'gal'} big active={field === 'qty'} onSelect={() => setField('qty')} testId="field-qty" />
             </div>
-            <p className="small muted mt">The employee’s company contract price is applied when they approve.</p>
-            <button className="block mt" disabled={busy || !(Number(qty) > 0) || !(Number(pump) > 0)} onClick={create}>Create request</button>
+            <p className="small muted mt">Tap a box, then type on the keypad. The employee’s company contract price is applied when they approve.</p>
           </>}
           {step === 2 && <>
             <h3>Waiting for employee approval</h3>
@@ -300,11 +300,12 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
               <button className={dispMode === 'amount' ? 'on' : ''} onClick={() => { setDispMode('amount'); setDispensed(String(active.approved_minor / 100)); }}>Amount (HTG)</button>
               <button className={dispMode === 'gallons' ? 'on' : ''} onClick={() => { setDispMode('gallons'); setDispensed(String(active.approved_mgal / 1000)); }}>Gallons</button>
             </div>
-            <label className="mt">{dispMode === 'amount' ? 'Amount actually dispensed (HTG)' : 'Gallons actually dispensed'}
-              <input type="number" step={dispMode === 'amount' ? '0.01' : '0.001'} value={dispensed} onChange={(e) => setDispensed(e.target.value)} style={{ fontSize: 22, fontWeight: 700 }} /></label>
-            <p className="small muted">If the pump stopped early, enter the display reading. Anything not used goes back to the employee.</p>
+            <div className="mt">
+              <NumField label={dispMode === 'amount' ? 'Amount actually dispensed' : 'Gallons actually dispensed'} value={dispensed}
+                suffix={dispMode === 'amount' ? 'HTG' : 'gal'} big active onSelect={() => {}} testId="field-dispensed" />
+            </div>
+            <p className="small muted">If the pump stopped early, type the display reading on the keypad. Anything not used goes back to the employee.</p>
             <div className="row mt">
-              <button disabled={busy || !(Number(dispensed) > 0)} onClick={complete}>Confirm sale</button>
               <button className="secondary" disabled={busy} onClick={cancel}>Nothing dispensed — cancel</button>
             </div>
           </>}
@@ -313,17 +314,36 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
             {active.status === 'completed'
               ? <p className="mt"><b style={{ fontSize: 22 }}>{money(active.charged_minor, active.currency)}</b> · {gal(active.dispensed_mgal, 2)} gal {active.grade} · pump {active.pump} · {active.employee_name}</p>
               : <p className="mt muted">The request was {active.status}. Create a new one.</p>}
-            <button className="mt" onClick={() => { setActive(null); setQty(''); }}>New request</button>
+            <button className="mt" onClick={() => { setActive(null); setQty(''); setField('qty'); }}>New request</button>
           </>}
         </div>
+        {step === 1 ? (
+          <div className="qr-box pad">
+            <Keypad
+              value={field === 'pump' ? pump : qty}
+              onChange={field === 'pump' ? setPump : setQty}
+              decimals={field === 'pump' ? 0 : qtyMode === 'amount' ? 0 : 1}
+              maxDigits={field === 'pump' ? 2 : 6}
+              quick={field === 'pump' ? [1, 2, 3, 4] : qtyMode === 'amount' ? [500, 1000, 2500, 5000] : [5, 10, 15, 20]}
+              quickLabel={field === 'pump' ? (n) => `Pump ${n}` : qtyMode === 'amount' ? (n) => n.toLocaleString('en-US') : (n) => `${n} gal`}
+            />
+            <button className="block" disabled={busy || !(Number(qty) > 0) || !(Number(pump) > 0)} onClick={create}>Create request</button>
+          </div>
+        ) : step === 3 ? (
+          <div className="qr-box pad">
+            <Keypad value={dispensed} onChange={setDispensed} decimals={dispMode === 'amount' ? 2 : 3} maxDigits={6} />
+            <button className="block" disabled={busy || !(Number(dispensed) > 0)} onClick={complete}>Confirm sale</button>
+          </div>
+        ) : (
         <div className="qr-box">
           {step === 2 && qr ? <>
             <img src={qr} alt="Station QR for the employee to scan" width={260} height={260} data-testid="station-challenge" data-challenge={active.challenge} />
             <div className="live-bar" aria-hidden><div /></div>
             <div className="rotate-bar" title="QR refreshes every 30 seconds"><div style={{ width: `${(rotateLeft / 30) * 100}%` }} /></div>
             <div className="muted small">New code in {Math.ceil(rotateLeft)}s · photos of this QR stop working</div>
-          </> : <div className="muted small" style={{ padding: 40 }}>{step === 1 ? 'The QR appears here after you create a request.' : step === 3 ? 'QR used. Single use only.' : '✓'}</div>}
+          </> : <div className="muted small" style={{ padding: 40 }}>{step === 4 ? '✓' : 'Preparing the QR…'}</div>}
         </div>
+        )}
       </div>
       <div className="progress">
         {['1 Request', '2 Approval', '3 Dispense', '4 Confirm'].map((label, i) => (
@@ -337,6 +357,7 @@ function RequestFlow({ active, setActive, mode: connection, pack, shiftId }: { a
 function CloseShift({ onBack, onClosed }: { onBack: () => void; onClosed: () => void }) {
   const [pump, setPump] = useState<Record<string, string>>({});
   const [pos, setPos] = useState<Record<string, string>>({});
+  const [cell, setCell] = useState<{ kind: 'pos' | 'pump'; grade: string }>({ kind: 'pos', grade: GRADES[0] });
   const [result, setResult] = useState<any>(null);
   const { busy, run } = useAction();
   const toNum = (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([, v]) => v !== '').map(([k, v]) => [k, Number(v)]));
@@ -364,14 +385,25 @@ function CloseShift({ onBack, onClosed }: { onBack: () => void; onClosed: () => 
     <div className="card white mt">
       <div className="row between"><h2 style={{ margin: 0 }}>Close shift</h2><button className="ghost" onClick={onBack}>Back</button></div>
       <p className="small muted">Enter this shift’s program totals: POS sales in HTG, and the pump meter gallons. They are compared with what was charged to employee wallets.</p>
-      <table className="mt"><thead><tr><th>Fuel</th><th>POS program sales (HTG)</th><th>Pump meter (gal)</th></tr></thead><tbody>
-        {GRADES.map((g) => (
-          <tr key={g}><td>{cap(g)}</td>
-            <td><input type="number" step="0.01" value={pos[g] ?? ''} onChange={(e) => setPos({ ...pos, [g]: e.target.value })} /></td>
-            <td><input type="number" step="0.1" value={pump[g] ?? ''} onChange={(e) => setPump({ ...pump, [g]: e.target.value })} /></td></tr>
-        ))}
-      </tbody></table>
-      <button className="mt" disabled={busy} onClick={submit}>Close shift</button>
+      <div className="grid mt terminal-cols">
+        <div className="grid" style={{ alignContent: 'start' }}>
+          {GRADES.map((g) => (
+            <div key={g} className="grid g2">
+              <NumField label={`${cap(g)} · POS sales`} suffix="HTG" value={pos[g] ?? ''} active={cell.kind === 'pos' && cell.grade === g}
+                onSelect={() => setCell({ kind: 'pos', grade: g })} testId={`close-pos-${g}`} />
+              <NumField label={`${cap(g)} · pump meter`} suffix="gal" value={pump[g] ?? ''} active={cell.kind === 'pump' && cell.grade === g}
+                onSelect={() => setCell({ kind: 'pump', grade: g })} testId={`close-pump-${g}`} />
+            </div>
+          ))}
+        </div>
+        <div className="qr-box pad">
+          <Keypad
+            value={(cell.kind === 'pos' ? pos : pump)[cell.grade] ?? ''}
+            onChange={(v) => (cell.kind === 'pos' ? setPos({ ...pos, [cell.grade]: v }) : setPump({ ...pump, [cell.grade]: v }))}
+            decimals={cell.kind === 'pos' ? 2 : 1} maxDigits={8} />
+          <button className="block" disabled={busy} onClick={submit}>Close shift</button>
+        </div>
+      </div>
     </div>
   );
 }
