@@ -156,7 +156,9 @@ const writeMe = (s: Surface, m: Me | null) => { try { m ? localStorage.setItem(m
  * last signed-in profile so the app keeps working without a connection (the session is re-checked
  * when the network returns).
  */
-export function Authed({ surface, children, loginExtra, offlineOk }: { surface: Surface; children: ReactNode; loginExtra?: ReactNode; offlineOk?: boolean }) {
+export function Authed({ surface, children, loginExtra, offlineOk, onLoginError }: {
+  surface: Surface; children: ReactNode; loginExtra?: ReactNode; offlineOk?: boolean; onLoginError?: (e: ApiError) => void;
+}) {
   const [me, setMe] = useState<Me | null>(null);
   const [checked, setChecked] = useState(false);
   const load = useCallback(async () => {
@@ -174,7 +176,7 @@ export function Authed({ surface, children, loginExtra, offlineOk }: { surface: 
   }, [surface, offlineOk]);
   useEffect(() => { load(); }, [load]);
   if (!checked) return null;
-  if (!me) return <Login surface={surface} onDone={load} extra={loginExtra} />;
+  if (!me) return <Login surface={surface} onDone={load} extra={loginExtra} onError={onLoginError} />;
   return <MeCtx.Provider value={me}>{children}</MeCtx.Provider>;
 }
 
@@ -185,13 +187,16 @@ const SURFACE_TITLE: Record<Surface, string> = {
   employee: 'Employee fuel wallet',
 };
 
-function Login({ surface, onDone, extra }: { surface: Surface; onDone: () => void; extra?: ReactNode }) {
+function Login({ surface, onDone, extra, onError }: { surface: Surface; onDone: () => void; extra?: ReactNode; onError?: (e: ApiError) => void }) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const { busy, run } = useAction();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await run(() => api(surface).post('/api/auth/login', { login, password }));
+    const res = await run(() => api(surface).post('/api/auth/login', { login, password }).catch((err) => {
+      if (err instanceof ApiError) onError?.(err);
+      throw err;
+    }));
     if (!res) return;
     if (!SURFACE_ROLES[surface].includes(res.actor.role)) {
       alert(`That account can’t use the ${SURFACE_TITLE[surface]}.`);

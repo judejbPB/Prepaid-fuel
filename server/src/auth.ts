@@ -69,8 +69,12 @@ export function login(
   if (user.role === 'st_attendant') {
     // Attendants can only work from their station's registered terminal.
     const terminal = resolveTerminal(db, input.terminalKey);
-    if (!terminal || terminal.station_id !== user.station_id) {
-      throw new AppError(403, 'terminal_required', 'Sign in from your station’s registered terminal');
+    if (!terminal) {
+      throw new AppError(403, 'terminal_unknown', 'This device is not a registered terminal. Activate it with your station’s code, then sign in.');
+    }
+    if (terminal.station_id !== user.station_id) {
+      const station = db.get('SELECT name FROM stations WHERE id = ?', terminal.station_id)?.name ?? 'another station';
+      throw new AppError(403, 'terminal_wrong_station', `This terminal belongs to ${station}. Sign in with an attendant account for ${station}, or activate this device for your own station.`);
     }
     if (terminal.status !== 'active') throw new AppError(403, 'terminal_frozen', 'This terminal is frozen');
     terminalId = terminal.id;

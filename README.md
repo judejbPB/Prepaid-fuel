@@ -37,7 +37,7 @@ Production-style: `npm run build && npm start` serves the API and the built web 
 | Station managers | `manager1@bousol` … `manager4@bousol` |
 | Employees (phone number; choose a PIN on first sign-in) | `50937000001` (Jean P.), `50937000002` (Marie L.) |
 
-Terminal activation codes: `STATION1` … `STATION4` (single use).
+Terminal activation codes: `STATION1` … `STATION4` (reusable in the demo so a device stays registered when the demo resets; single use on a real deployment). Each code registers the device for that station, so sign in with the matching attendant (`STATION2` → `attendant2@bousol`).
 
 **Try the whole loop:** open `/station`, activate with `STATION2`, sign in as `attendant2@bousol`, open a
 shift and create a 2,000 HTG diesel request. In another browser profile open `/employee`, sign in as

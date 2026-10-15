@@ -5,6 +5,7 @@ import * as alloc from './services/allocation.js';
 import * as funding from './services/funding.js';
 import * as red from './services/redemption.js';
 import { SimulatedPhone } from './phone-sim.js';
+import { sha256 } from './auth.js';
 
 export const DEMO_PASSWORD = 'demo1234';
 export const DEMO_PIN = '1234';
@@ -12,6 +13,7 @@ export const DEMO_PIN = '1234';
 /** Sample data matching the solution overview mockups. All names are illustrative. */
 export function seedDemo(ctx: Ctx) {
   const { db } = ctx;
+  ctx.config.demoTerminals = true;
   const as = (userId: number, extra: Partial<Actor> = {}): Actor => ({ ...actorFor(db, userId, null, null), ...extra });
 
   const user = (name: string, login: string, role: any, extra: { companyId?: number; stationId?: number } = {}) =>
@@ -27,6 +29,8 @@ export function seedDemo(ctx: Ctx) {
     const s = admin.createStation(ctx, null, { name: `Station ${n}`, address: `Route ${n}, Port-au-Prince` });
     const t = admin.createTerminal(ctx, null, { stationId: s.id, label: `T-0${n}` });
     db.run('UPDATE terminals SET activation_code = ? WHERE id = ?', `STATION${n}`, t.id);
+    // Pre-register the demo key so a device activated before a re-seed is still recognised.
+    db.run('UPDATE terminals SET device_key_hash = ? WHERE id = ?', sha256(admin.demoTerminalKey(t.id)), t.id);
     return { ...s, terminalId: t.id };
   });
   const attendants = stations.map((s, i) =>

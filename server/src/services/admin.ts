@@ -60,6 +60,9 @@ export function createTerminal(ctx: Ctx, actor: Actor | null, input: { stationId
 }
 
 /** Binds a physical device to a terminal. The returned key is stored only on the device. */
+/** Demo terminals only (see Config.demoTerminals): the same key on every re-seed. */
+export const demoTerminalKey = (terminalId: number) => `demo-terminal-${terminalId}`;
+
 export function activateTerminal(ctx: Ctx, activationCode: string) {
   return ctx.db.tx(() => {
     const t = ctx.db.get(
@@ -67,6 +70,11 @@ export function activateTerminal(ctx: Ctx, activationCode: string) {
       activationCode.trim().toUpperCase(),
     );
     if (!t) throw notFound('Activation code');
+    if (ctx.config.demoTerminals) {
+      const key = demoTerminalKey(t.id);
+      ctx.db.run('UPDATE terminals SET device_key_hash = ? WHERE id = ?', sha256(key), t.id);
+      return { terminalKey: key, terminal: { id: t.id, label: t.label, station_id: t.station_id, station_name: t.station_name } };
+    }
     const key = randomToken(32);
     ctx.db.run('UPDATE terminals SET device_key_hash = ?, activation_code = NULL WHERE id = ?', sha256(key), t.id);
     ctx.db.audit(null, 'terminal.activate', 'terminal', t.id);
