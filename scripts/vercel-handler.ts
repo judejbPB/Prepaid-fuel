@@ -5,7 +5,7 @@
 import { BlobNotFoundError, get, head, put } from '@vercel/blob';
 import { buildApp } from '../server/src/app.js';
 import { createCtx, type Ctx } from '../server/src/context.js';
-import { PersistentDemo, type SnapshotStore } from '../server/src/demo-persist.js';
+import { attachDemoPersistence, PersistentDemo, type SnapshotStore } from '../server/src/demo-persist.js';
 import { seedDemo } from '../server/src/demo.js';
 
 const SNAPSHOT = 'demo/bousol-demo.db';
@@ -45,10 +45,7 @@ if (persistent) {
   seedDemo(ctx);
 }
 const app = buildApp(ctx);
-if (persistent) {
-  // Save before the response leaves, so the client's next request (maybe on another instance) sees it.
-  app.addHook('onSend', async (_req, _reply, payload) => { await persistent.afterRequest(); return payload; });
-}
+if (persistent) attachDemoPersistence(app, persistent);
 const ready = (async () => { if (persistent) await persistent.init(); await app.ready(); })();
 
 // One request at a time per instance: a snapshot reload must never swap the database under a running request.
@@ -69,7 +66,6 @@ export default async function handler(req: any, res: any) {
     return;
   }
   const run = queue.then(async () => {
-    await persistent.beforeRequest();
     const done = new Promise<void>((resolve) => { res.on('finish', resolve); res.on('close', resolve); });
     app.server.emit('request', req, res);
     await done;
