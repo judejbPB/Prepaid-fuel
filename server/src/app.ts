@@ -10,6 +10,7 @@ import { localizeLedgerPayload } from './i18n-ledger.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
+import * as alerts from './services/fuel-alerts.js';
 import * as bankAi from './services/bank-ai.js';
 import * as statementAi from './services/statement-ai.js';
 import * as sage from './services/sage.js';
@@ -131,7 +132,14 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     });
 
     // ---- distributor
-    api.get('/api/distributor/dashboard', async (req) => reports.distributorDashboard(ctx, req.actor));
+    api.get('/api/distributor/dashboard', async (req) => ({ ...reports.distributorDashboard(ctx, req.actor), open_fuel_alerts: alerts.openAlertCount(ctx) }));
+
+    // ---- suspicious fueling alerts (review only: nothing is blocked or frozen automatically)
+    api.get('/api/alerts', async (req) => alerts.listFuelAlerts(ctx, req.actor, z.object({ status: z.enum(['open', 'all']).optional() }).parse(req.query)));
+    api.post('/api/alerts/:id/review', async (req) => {
+      const b = body(z.object({ outcome: z.enum(['cleared', 'confirmed']), note: z.string().min(2) }), req);
+      return alerts.reviewFuelAlert(ctx, req.actor, params(req), b.outcome, b.note);
+    });
     api.get('/api/ledger/journal', async (req) => {
       const q = z.object({ companyId: id.optional() }).parse(req.query);
       return reports.journal(ctx, req.actor, q.companyId);

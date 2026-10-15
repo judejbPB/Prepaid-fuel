@@ -217,6 +217,26 @@ BEGIN SELECT RAISE(ABORT, 'journal is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS journal_entries_no_delete BEFORE DELETE ON journal_entries
 BEGIN SELECT RAISE(ABORT, 'journal is append-only'); END;
 
+-- Suspicious fueling alerts for a person to review (services/fuel-alerts.ts). One row per pattern (dedupe_key).
+CREATE TABLE IF NOT EXISTS fuel_alerts (
+  id INTEGER PRIMARY KEY,
+  rule TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('high','medium','low')),
+  dedupe_key TEXT NOT NULL UNIQUE,
+  company_id INTEGER REFERENCES companies(id),
+  station_id INTEGER REFERENCES stations(id),
+  employee_id INTEGER REFERENCES employees(id),
+  attendant_id INTEGER REFERENCES users(id),
+  terminal_id INTEGER REFERENCES terminals(id),
+  redemption_ids TEXT NOT NULL DEFAULT '[]',
+  facts_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','cleared','confirmed')),
+  review_note TEXT,
+  reviewed_by INTEGER REFERENCES users(id),
+  reviewed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Sage accounting export: account codes set by finance, and which ledger entries went in which export.
 CREATE TABLE IF NOT EXISTS sage_settings (
   key TEXT PRIMARY KEY,

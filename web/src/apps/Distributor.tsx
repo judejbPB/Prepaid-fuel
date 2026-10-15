@@ -4,6 +4,7 @@ import { Link, Route, Routes } from 'react-router-dom';
 import { api, cap, date, gal, money, when } from '../api';
 import { Authed, Empty, Kpi, Modal, PageHead, Shell, Status, useAction, useLoad, useMe } from '../ui';
 import { SageExport } from './accounting';
+import { FuelAlerts } from './alerts';
 import { BankStatements, RefundsTable } from './finance';
 import { ExceptionsPanel } from './shared';
 import { t } from '../i18n';
@@ -15,7 +16,7 @@ export default function Distributor() {
     <Authed surface="distributor">
       <Shell surface="distributor" nav={[
         ['/distributor', t('Overview')], ['/distributor/funding', t('Funding queue')], ['/distributor/bank', t('Bank statements')],
-        ['/distributor/refunds', t('Refunds')], ['/distributor/exceptions', t('Exceptions')],
+        ['/distributor/refunds', t('Refunds')], ['/distributor/exceptions', t('Exceptions')], ['/distributor/alerts', t('Fuel alerts')],
         ['/distributor/shifts', t('Shift reconciliation')], ['/distributor/network', t('Clients & stations')],
         ['/distributor/ledger', t('Ledger')], ['/distributor/accounting', t('Sage export')], ['/distributor/audit', t('Audit log')],
       ]}>
@@ -25,6 +26,7 @@ export default function Distributor() {
           <Route path="bank" element={<BankStatements />} />
           <Route path="refunds" element={<Refunds />} />
           <Route path="exceptions" element={<><PageHead eyebrow={t('Controls')} title={t('Exceptions')} /><ExceptionsPanel surface="distributor" /></>} />
+          <Route path="alerts" element={<FuelAlerts />} />
           <Route path="shifts" element={<Shifts />} />
           <Route path="network" element={<Network />} />
           <Route path="ledger" element={<Ledger />} />
@@ -71,6 +73,10 @@ function Overview() {
           </tbody></table>
         </div>
       </div>
+      {data.open_fuel_alerts > 0 && (
+        <div className="banner mt"><span className="grow">{t('{n} fuel alert(s) to review.', { n: data.open_fuel_alerts })}</span>
+          <Link to="/distributor/alerts"><button className="sm">{t('Review')}</button></Link></div>
+      )}
       {k.unmatched_bank_lines > 0 && (
         <div className="banner mt"><span className="grow">{t('{n} imported bank line(s) could not be matched to a funding reference.', { n: k.unmatched_bank_lines })}</span>
           <Link to="/distributor/bank"><button className="sm">{t('Match')}</button></Link></div>
