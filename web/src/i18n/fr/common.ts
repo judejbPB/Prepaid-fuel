@@ -177,6 +177,18 @@ export const fr: Record<string, string> = {
   'Excel (.xlsx) or CSV statement downloaded from online banking, with at least a reference column and an amount or credit column (date and description optional). Credits whose description contains a funding reference (TR-xxxx) and the exact expected amount are matched automatically. A different approver still activates each lot.':
     'Relevé Excel (.xlsx) ou CSV téléchargé depuis la banque en ligne, avec au moins une colonne de référence et une colonne de montant ou de crédit (date et libellé facultatifs). Les crédits dont le libellé contient une référence de financement (TR-xxxx) et le montant exact attendu sont rapprochés automatiquement. Un autre approbateur doit toujours activer chaque lot.',
   'Excel file ready: {name}': 'Fichier Excel prêt : {name}',
+  'AI suggestions': 'Suggestions IA',
+  'Ask again': 'Redemander',
+  'Suggest a match': 'Suggérer un rapprochement',
+  'AI compares this line with the open funding requests (reference typos, company name, amount, date). It only suggests: you choose, and a second approver still activates the lot.':
+    'L’IA compare cette ligne aux demandes de financement en attente (référence mal saisie, nom de l’entreprise, montant, date). Elle ne fait que suggérer : c’est vous qui choisissez, et un autre approbateur active toujours le lot.',
+  'No likely match among the open requests. Contact the company or ignore the line.': 'Aucune correspondance probable parmi les demandes en attente. Contactez l’entreprise ou ignorez la ligne.',
+  'Likely': 'Probable',
+  'Possible': 'Possible',
+  'Unlikely': 'Peu probable',
+  'Amount differs: contact the company before matching.': 'Montant différent : contactez l’entreprise avant de rapprocher.',
+  'Selected': 'Choisie',
+  'Choose': 'Choisir',
   'Remove': 'Retirer',
   'Paste sample': 'Coller un exemple',
   '…or paste CSV here': '…ou collez le CSV ici',

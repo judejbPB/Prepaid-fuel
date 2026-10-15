@@ -10,6 +10,7 @@ import { localizeLedgerPayload } from './i18n-ledger.js';
 import * as admin from './services/admin.js';
 import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
+import * as bankAi from './services/bank-ai.js';
 import * as sage from './services/sage.js';
 import { readXlsx } from './services/spreadsheet.js';
 import * as refunds from './services/refunds.js';
@@ -173,6 +174,8 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
     });
     api.post('/api/bank/transactions/:id/match', async (req) =>
       bank.matchTransaction(ctx, req.actor, params(req), body(z.object({ fundingId: id }), req).fundingId));
+    api.post('/api/bank/transactions/:id/suggest', async (req) =>
+      bankAi.suggestMatches(ctx, req.actor, params(req), requestLang(req.headers)));
     api.post('/api/bank/transactions/:id/ignore', async (req) =>
       bank.ignoreTransaction(ctx, req.actor, params(req), body(z.object({ note: z.string().min(2) }), req).note));
 

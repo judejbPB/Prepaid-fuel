@@ -181,6 +181,10 @@ const EXACT: Record<string, string> = {
   'Statement needs at least "reference" and "amount" columns':
     'Le relevé doit contenir au moins une colonne « Référence » et une colonne « Montant » (ou « Crédit »)',
 
+  // bank-ai.ts
+  'AI suggestions are not set up on this server yet': 'Les suggestions IA ne sont pas encore activées sur ce serveur',
+  'The AI service did not answer. Try again, or match the line by hand.': 'Le service d’IA n’a pas répondu. Réessayez ou rapprochez la ligne manuellement.',
+
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
   'Account codes: 1 to 13 letters or digits': 'Numéros de compte : 1 à 13 lettres ou chiffres',
