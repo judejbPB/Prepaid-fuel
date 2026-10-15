@@ -4,7 +4,7 @@ import { t } from './i18n';
 
 const ACTIONS: Record<string, () => string> = {
   'bank.ignore': () => t('Bank line ignored'), 'bank.import': () => t('Bank statement imported'), 'bank.ai_suggest': () => t('AI match suggested'), 'bank.ai_read': () => t('Statement read by AI'),
-  'exception.ai_summary': () => t('Dispute analysed by AI'), 'exception.reply': () => t('Reply sent to the employee'),
+  'exception.ai_summary': () => t('Dispute analysed by AI'), 'report.ai_question': () => t('Question asked to the reports assistant'), 'exception.reply': () => t('Reply sent to the employee'),
   'alert.cleared': () => t('Fuel alert marked normal'), 'alert.confirmed': () => t('Fuel alert marked to follow up'),
   'sage.settings': () => t('Sage codes changed'), 'sage.export': () => t('Sage export downloaded'),
   'batch.approve': () => t('Allocation batch approved'), 'batch.create': () => t('Allocation batch created'),
@@ -39,13 +39,13 @@ const FIELDS: Record<string, () => string> = {
   terminalId: () => t('Terminal'), reason: () => t('Reason'), reference: () => t('Reference'), code: () => t('Code'),
   label: () => t('Label'), stationId: () => t('Station'), companyId: () => t('Company'), status: () => t('Status'),
   from: () => t('From'), to: () => t('To'), entries: () => t('Entries'), format: () => t('File'), mode: () => t('Detail'),
-  journal: () => t('Journal code'), suggestions: () => t('AI suggestions'), source: () => t('File'), rule: () => t('Rule'), suggestion: () => t('AI suggestion'), message: () => t('Message'), note: () => t('Note'),
+  journal: () => t('Journal code'), suggestions: () => t('AI suggestions'), source: () => t('File'), rule: () => t('Rule'), suggestion: () => t('AI suggestion'), message: () => t('Message'), question: () => t('Question'), tools: () => t('Reports used'), note: () => t('Note'),
 };
 
 export const auditAction = (code: string) => ACTIONS[code]?.() ?? code;
 const ENTITIES: Record<string, () => string> = {
   allocation_line: () => t('Allocation line'), bank_statement: () => t('Bank statement'), bank_transaction: () => t('Bank line'),
-  fuel_alert: () => t('Fuel alert'), sage_settings: () => t('Sage codes'), sage_export: () => t('Sage export'),
+  fuel_alert: () => t('Fuel alert'), report: () => t('Reports'), sage_settings: () => t('Sage codes'), sage_export: () => t('Sage export'),
   batch: () => t('Allocation batch'), company: () => t('Company'), contract: () => t('Contract price'), employee: () => t('Employee'),
   exception: () => t('Exception'), funding: () => t('Funding'), lot: () => t('Lot'), recurring: () => t('Recurring benefit'),
   redemption: () => t('Fuel request'), refund: () => t('Refund'), shift: () => t('Shift'), station: () => t('Station'),

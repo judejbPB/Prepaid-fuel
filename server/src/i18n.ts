@@ -199,6 +199,10 @@ const EXACT: Record<string, string> = {
   'The AI service did not answer. Try again, or handle the dispute by hand.': 'Le service d’IA n’a pas répondu. Réessayez, ou traitez la contestation manuellement.',
   'Only disputes have a summary and replies': 'Seules les contestations ont un résumé et des réponses',
 
+  // reports-ai.ts
+  'The AI service did not answer. Try again, or use the reports.': 'Le service d’IA n’a pas répondu. Réessayez, ou consultez les rapports.',
+  'The question took too long to answer. Try a narrower question (one company or one month).': 'La question a pris trop de temps. Essayez une question plus précise (une entreprise ou un mois).',
+
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
   'Account codes: 1 to 13 letters or digits': 'Numéros de compte : 1 à 13 lettres ou chiffres',

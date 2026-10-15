@@ -9,7 +9,7 @@ import { listFunding } from './funding.js';
 import { listRedemptions } from './redemption.js';
 
 /** Sum of credits minus debits (minor units) of accounts matching a LIKE pattern, optionally for one company's lots. */
-function sumAccounts(ctx: Ctx, pattern: string, companyId?: number) {
+export function sumAccounts(ctx: Ctx, pattern: string, companyId?: number) {
   const row = ctx.db.get(
     `SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS b FROM journal_lines jl
        ${companyId ? 'JOIN lots l ON l.id = jl.lot_id AND l.company_id = ?' : ''}

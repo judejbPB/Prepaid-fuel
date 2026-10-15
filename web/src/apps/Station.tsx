@@ -1,3 +1,4 @@
+import { ReportsAssistant } from './assistant';
 import QRCode from 'qrcode';
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, cap, gal, money, session, when } from '../api';
@@ -451,6 +452,7 @@ function Manager() {
           </tbody>
         </table>
       </div>
+      <div className="mt"><ReportsAssistant surface="station" embedded /></div>
     </Shell>
   );
 }
