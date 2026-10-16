@@ -237,3 +237,43 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--n
 .lang-toggle.dark { border-color: var(--navy-2); background: transparent; }
 .lang-toggle.dark button { color: #d2d1ea; }
 .lang-toggle.dark button.on { background: #fff; color: var(--navy); }
+
+/* ---------------------------------------------------------------- charts (charts.tsx)
+   Series colors are validated categorical slots (blue, orange) on the white card; text never wears them. */
+:root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-grid: #e7e7ef; }
+.chart-card { transition: opacity 0.2s; }
+.viz svg { display: block; overflow: visible; outline: none; }
+.viz svg:focus-visible { box-shadow: 0 0 0 2px var(--navy-3); border-radius: 6px; }
+.viz-grid { stroke: var(--viz-grid); stroke-width: 1; }
+.viz-tick { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.viz-line { fill: none; stroke: var(--viz-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.viz-area { fill: var(--viz-1); opacity: 0.1; }
+.viz-cross { stroke: var(--muted); stroke-width: 1; }
+.viz-dot { fill: var(--viz-1); stroke: var(--paper); stroke-width: 2; }
+.viz-endlabel { font-size: 12px; font-weight: 600; fill: var(--ink); }
+.viz-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--paper); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 12px; min-width: 150px; box-shadow: 0 6px 18px rgba(35, 33, 79, 0.12); }
+.viz-tip strong { font-size: 14px; color: var(--ink); }
+.viz-bars { display: flex; flex-direction: column; gap: 10px; }
+.viz-bar-row { display: grid; grid-template-columns: minmax(80px, 30%) 1fr; gap: 10px; align-items: center; outline: none; }
+.viz-bar-row:focus-visible .viz-bar-name { text-decoration: underline; }
+.viz-bar-name { font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viz-bar-track { position: relative; display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.viz-bar { height: 16px; background: var(--viz-1); border-radius: 0 4px 4px 0; max-width: calc(100% - 90px); transition: filter 0.15s; }
+.viz-bar.on { filter: brightness(1.12); }
+.viz-bar-value { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.viz-split { display: flex; gap: 2px; height: 20px; }
+.viz-seg { min-width: 4px; }
+.viz-seg:first-child { border-radius: 4px 0 0 4px; }
+.viz-seg:last-child { border-radius: 0 4px 4px 0; }
+.viz-seg:only-child { border-radius: 4px; }
+.viz-slot-1 { background: var(--viz-1); }
+.viz-slot-2 { background: var(--viz-2); }
+.viz-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.viz-legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.delta-good { color: var(--ok); font-weight: 600; }
+.delta-bad { color: var(--bad); font-weight: 600; }
+.dash-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dash-filters select { width: auto; max-width: 100%; }
+.dash-filters .seg { flex-wrap: wrap; }
+.dash-filters .seg button { white-space: nowrap; flex: 0 0 auto; }

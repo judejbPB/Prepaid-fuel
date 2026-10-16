@@ -203,6 +203,9 @@ const EXACT: Record<string, string> = {
   'The AI service did not answer. Try again, or use the reports.': 'Le service d’IA n’a pas répondu. Réessayez, ou consultez les rapports.',
   'The question took too long to answer. Try a narrower question (one company or one month).': 'La question a pris trop de temps. Essayez une question plus précise (une entreprise ou un mois).',
 
+  // dashboard.ts
+  'Choose a period of at most 400 days': 'Choisissez une période de 400 jours au maximum',
+
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
   'Account codes: 1 to 13 letters or digits': 'Numéros de compte : 1 à 13 lettres ou chiffres',
