@@ -56,7 +56,7 @@ p { margin: 0; }
 .side .spacer { flex: 1; }
 .side .who { font-size: 13px; color: #aeadd0; padding: 10px; border-top: 1px solid var(--navy-2); }
 .side .who b { color: #fff; display: block; }
-.main { padding: 28px 32px 48px; max-width: 1280px; width: 100%; }
+.main { padding: 28px 32px 48px; max-width: 1280px; width: 100%; min-width: 0; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 .page-head h1 { margin-top: 4px; }
 
@@ -277,3 +277,4 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--n
 .dash-filters select { width: auto; max-width: 100%; }
 .dash-filters .seg { flex-wrap: wrap; }
 .dash-filters .seg button { white-space: nowrap; flex: 0 0 auto; }
+.nowrap { white-space: nowrap; }

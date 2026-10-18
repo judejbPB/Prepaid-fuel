@@ -8,6 +8,7 @@ import { fr as corporate } from './corporate';
 import { fr as distributor } from './distributor';
 import { fr as employee } from './employee';
 import { fr as station } from './station';
+import { fr as usage } from './usage';
 
 // Shared words (common) win over a screen's own choice, so a term reads the same everywhere.
-export const FR: Record<string, string> = { ...accounting, ...alerts, ...assistant, ...reports, ...audit, ...distributor, ...corporate, ...station, ...employee, ...common };
+export const FR: Record<string, string> = { ...accounting, ...alerts, ...assistant, ...reports, ...usage, ...audit, ...distributor, ...corporate, ...station, ...employee, ...common };

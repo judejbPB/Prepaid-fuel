@@ -174,8 +174,8 @@ export function SplitBar({ parts, format, empty }: { parts: { name: string; valu
 }
 
 /** Headline figure with its change against the previous period (arrow + sign + words, never color alone). */
-export function StatTile({ label, value, now, prev, upIsGood = true, note }: {
-  label: string; value: string; now?: number; prev?: number; upIsGood?: boolean; note?: string;
+export function StatTile({ label, value, now, prev, upIsGood = true, note, vs }: {
+  label: string; value: string; now?: number; prev?: number; upIsGood?: boolean; note?: string; vs?: string;
 }) {
   let delta: ReactNode = null;
   if (now != null && prev != null) {
@@ -186,7 +186,7 @@ export function StatTile({ label, value, now, prev, upIsGood = true, note }: {
       const good = pct === 0 ? null : (pct > 0) === upIsGood;
       delta = (
         <span className={good == null ? 'muted' : good ? 'delta-good' : 'delta-bad'}>
-          {pct > 0 ? '▲' : pct < 0 ? '▼' : '='} {pct > 0 ? '+' : ''}{pct} % <span className="muted">{t('vs previous period')}</span>
+          {pct > 0 ? '▲' : pct < 0 ? '▼' : '='} {pct > 0 ? '+' : ''}{pct} % <span className="muted">{vs ?? t('vs previous period')}</span>
         </span>
       );
     }
@@ -196,6 +196,58 @@ export function StatTile({ label, value, now, prev, upIsGood = true, note }: {
       <div className="label">{label}</div>
       <div className="value" style={{ fontVariantNumeric: 'normal', fontSize: 26, whiteSpace: 'nowrap' }}>{value}</div>
       <div className="sub">{delta ?? note}</div>
+    </div>
+  );
+}
+
+export interface PairPoint { label: string; a: number; b: number }
+
+/** Two series side by side per period (e.g. given vs used each month): columns from one baseline, a legend, a tooltip. */
+export function PairedColumns({ points, names, format, axisFormat, height = 220 }: {
+  points: PairPoint[]; names: [string, string]; format: (v: number) => string; axisFormat: (v: number) => string; height?: number;
+}) {
+  const { ref, width } = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const pad = { top: 12, right: 8, bottom: 28, left: 52 };
+  const w = width - pad.left - pad.right;
+  const h = height - pad.top - pad.bottom;
+  const ticks = niceTicks(Math.max(0, ...points.flatMap((p) => [p.a, p.b])));
+  const topV = ticks[ticks.length - 1] || 1;
+  const y = (v: number) => pad.top + h - (v / topV) * h;
+  const band = w / Math.max(1, points.length);
+  const col = Math.max(3, Math.min(28, (band - 10) / 2));
+  const tip = hover != null ? points[hover] : null;
+  return (
+    <div ref={ref} className="viz" style={{ position: 'relative' }}>
+      <div className="viz-legend" style={{ flexDirection: 'row', gap: 16, marginBottom: 6 }}>
+        {names.map((n, i) => <span key={n} className="row" style={{ gap: 6 }}><span className={`viz-swatch viz-slot-${i + 1}`} />{n}</span>)}
+      </div>
+      <svg width={width} height={height} role="img" aria-label={names.join(' / ')} onPointerLeave={() => setHover(null)}>
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={pad.left} x2={pad.left + w} y1={y(v)} y2={y(v)} className="viz-grid" />
+            <text x={pad.left - 8} y={y(v)} dy="0.32em" textAnchor="end" className="viz-tick">{axisFormat(v)}</text>
+          </g>
+        ))}
+        {points.map((p, i) => {
+          const cx = pad.left + band * i + band / 2;
+          return (
+            <g key={p.label} tabIndex={0} onPointerEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} style={{ outline: 'none' }}>
+              <rect x={pad.left + band * i} y={pad.top} width={band} height={h} fill="transparent" />
+              <rect x={cx - col - 1} y={y(p.a)} width={col} height={Math.max(0, y(0) - y(p.a))} rx={2} className="viz-slot-1" style={{ fill: 'var(--viz-1)', opacity: hover == null || hover === i ? 1 : 0.6 }} />
+              <rect x={cx + 1} y={y(p.b)} width={col} height={Math.max(0, y(0) - y(p.b))} rx={2} style={{ fill: 'var(--viz-2)', opacity: hover == null || hover === i ? 1 : 0.6 }} />
+              <text x={cx} y={height - 8} textAnchor="middle" className="viz-tick">{p.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {tip && (
+        <div className="viz-tip" style={{ left: Math.min(width - 190, Math.max(0, pad.left + band * hover! + band / 2 + 10)), top: 30 }}>
+          <strong>{tip.label}</strong>
+          <div><span className="viz-swatch viz-slot-1" /> {names[0]} : {format(tip.a)}</div>
+          <div><span className="viz-swatch viz-slot-2" /> {names[1]} : {format(tip.b)}</div>
+        </div>
+      )}
     </div>
   );
 }

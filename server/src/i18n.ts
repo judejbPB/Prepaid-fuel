@@ -205,6 +205,7 @@ const EXACT: Record<string, string> = {
 
   // dashboard.ts
   'Choose a period of at most 400 days': 'Choisissez une période de 400 jours au maximum',
+  'Choose 3, 6 or 12 months': 'Choisissez 3, 6 ou 12 mois',
 
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',
