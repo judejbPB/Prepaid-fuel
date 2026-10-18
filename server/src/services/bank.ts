@@ -3,8 +3,12 @@ import type { Ctx } from '../context.js';
 import { badRequest, conflict, notFound } from '../errors.js';
 import { getFunding, matchFunding } from './funding.js';
 
-/** Minimal RFC 4180 CSV parser (quoted fields, escaped quotes, CRLF). */
+/**
+ * Minimal RFC 4180 CSV parser (quoted fields, escaped quotes, CRLF). The separator is ";" when one of the first lines
+ * has one (French Excel, where "1 234,56" uses a decimal comma; a title line may come first), otherwise ",".
+ */
 export function parseCsv(text: string): string[][] {
+  const sep = text.split(/\r?\n/, 5).some((l) => l.includes(';')) ? ';' : ',';
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
@@ -16,7 +20,7 @@ export function parseCsv(text: string): string[][] {
       else if (ch === '"') quoted = false;
       else field += ch;
     } else if (ch === '"') quoted = true;
-    else if (ch === ',' || ch === ';') { row.push(field); field = ''; }
+    else if (ch === sep) { row.push(field); field = ''; }
     else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && text[i + 1] === '\n') i++;
       row.push(field); field = '';

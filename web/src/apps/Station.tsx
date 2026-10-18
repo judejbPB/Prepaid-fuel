@@ -13,6 +13,8 @@ import {
 } from '../station-offline';
 import { Authed, BrandLogo, Empty, Kpi, PageHead, Shell, Status, useAction, useLoad, useLogout, useMe } from '../ui';
 import { ExceptionsPanel } from './shared';
+import { StationPerformance } from './station-perf';
+import { Route, Routes } from 'react-router-dom';
 
 const s = api('station');
 const GRADES = ['diesel', 'gasoline'];
@@ -423,7 +425,19 @@ function Manager() {
   const { data } = useLoad(() => s.get(`/api/stations/${me.stationId}/overview`), [], 15000);
   const shifts = useLoad(() => s.get('/api/shifts'), [], 15000);
   return (
-    <Shell surface="station" nav={[['/station', t('Station overview')]]}>
+    <Shell surface="station" nav={[['/station', t('Station overview')], ['/station/performance', t('Station performance')]]}>
+      <Routes>
+        <Route path="performance" element={<StationPerformance surface="station" />} />
+        <Route path="*" element={<ManagerOverview data={data} shifts={shifts.data} />} />
+      </Routes>
+    </Shell>
+  );
+}
+
+function ManagerOverview({ data, shifts }: { data: any; shifts: any[] | undefined }) {
+  const me = useMe();
+  return (
+    <>
       <PageHead eyebrow={t('Station manager · {station}', { station: me.station?.name ?? '' })} title={t('Fuel counts only after the employee confirms')} />
       <div className="grid g2">
         <div className="card white">
@@ -431,7 +445,7 @@ function Manager() {
           {data?.terminal ? <p>{data.terminal.label} <Status s={data.terminal.status} /> {data.terminal.activated ? <span className="small muted">· {t('device activated')}</span> : <span className="small muted">· {t('awaiting activation')}</span>}</p> : <Empty>{t('No terminal registered.')}</Empty>}
           <h2 className="mt">{t('Recent shifts')}</h2>
           <table><tbody>
-            {shifts.data?.slice(0, 8).map((sh: any) => (
+            {shifts?.slice(0, 8).map((sh: any) => (
               <tr key={sh.id}><td>#{sh.id}</td><td>{sh.attendant_name}</td><td className="small">{when(sh.opened_at)}</td>
                 <td className="r num small">{sh.variance_minor != null ? t('{amount} · {gallons} gal var.', { amount: money(sh.variance_minor), gallons: gal(sh.variance_mgal, 1) }) : ''}</td><td className="r"><Status s={sh.status} /></td></tr>
             ))}
@@ -453,6 +467,6 @@ function Manager() {
         </table>
       </div>
       <div className="mt"><ReportsAssistant surface="station" embedded /></div>
-    </Shell>
+    </>
   );
 }

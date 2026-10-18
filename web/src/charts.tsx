@@ -174,21 +174,18 @@ export function SplitBar({ parts, format, empty }: { parts: { name: string; valu
 }
 
 /** Headline figure with its change against the previous period (arrow + sign + words, never color alone). */
-export function StatTile({ label, value, now, prev, upIsGood = true, note, vs }: {
+export function StatTile({ label, value, now, prev, upIsGood = true, note, vs, pct: given }: {
   label: string; value: string; now?: number; prev?: number; upIsGood?: boolean; note?: string; vs?: string;
+  /** A change already worked out (e.g. like for like); shown instead of comparing now with prev. */
+  pct?: number | null;
 }) {
   let delta: ReactNode = null;
-  if (now != null && prev != null) {
+  if (given != null) delta = <Delta pct={given} upIsGood={upIsGood} vs={vs} />;
+  else if (now != null && prev != null) {
     if (prev === 0 && now === 0) delta = <span className="muted">{t('No change')}</span>;
     else if (prev === 0) delta = <span className="muted">{t('New this period')}</span>;
     else {
-      const pct = Math.round(((now - prev) / prev) * 100);
-      const good = pct === 0 ? null : (pct > 0) === upIsGood;
-      delta = (
-        <span className={good == null ? 'muted' : good ? 'delta-good' : 'delta-bad'}>
-          {pct > 0 ? '▲' : pct < 0 ? '▼' : '='} {pct > 0 ? '+' : ''}{pct} % <span className="muted">{vs ?? t('vs previous period')}</span>
-        </span>
-      );
+      delta = <Delta pct={Math.round(((now - prev) / prev) * 100)} upIsGood={upIsGood} vs={vs} />;
     }
   }
   return (
@@ -216,6 +213,7 @@ export function PairedColumns({ points, names, format, axisFormat, height = 220 
   const y = (v: number) => pad.top + h - (v / topV) * h;
   const band = w / Math.max(1, points.length);
   const col = Math.max(3, Math.min(28, (band - 10) / 2));
+  const labelEvery = Math.max(1, Math.ceil(40 / band)); // keep axis labels from running into each other on phones
   const tip = hover != null ? points[hover] : null;
   return (
     <div ref={ref} className="viz" style={{ position: 'relative' }}>
@@ -236,7 +234,7 @@ export function PairedColumns({ points, names, format, axisFormat, height = 220 
               <rect x={pad.left + band * i} y={pad.top} width={band} height={h} fill="transparent" />
               <rect x={cx - col - 1} y={y(p.a)} width={col} height={Math.max(0, y(0) - y(p.a))} rx={2} className="viz-slot-1" style={{ fill: 'var(--viz-1)', opacity: hover == null || hover === i ? 1 : 0.6 }} />
               <rect x={cx + 1} y={y(p.b)} width={col} height={Math.max(0, y(0) - y(p.b))} rx={2} style={{ fill: 'var(--viz-2)', opacity: hover == null || hover === i ? 1 : 0.6 }} />
-              <text x={cx} y={height - 8} textAnchor="middle" className="viz-tick">{p.label}</text>
+              {i % labelEvery === 0 && <text x={cx} y={height - 8} textAnchor="middle" className="viz-tick">{p.label}</text>}
             </g>
           );
         })}
@@ -249,5 +247,14 @@ export function PairedColumns({ points, names, format, axisFormat, height = 220 
         </div>
       )}
     </div>
+  );
+}
+
+function Delta({ pct, upIsGood, vs }: { pct: number; upIsGood: boolean; vs?: string }) {
+  const good = pct === 0 ? null : (pct > 0) === upIsGood;
+  return (
+    <span className={good == null ? 'muted' : good ? 'delta-good' : 'delta-bad'}>
+      {pct > 0 ? '▲' : pct < 0 ? '▼' : '='} {pct > 0 ? '+' : ''}{pct} % <span className="muted">{vs ?? t('vs previous period')}</span>
+    </span>
   );
 }

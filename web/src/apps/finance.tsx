@@ -9,7 +9,7 @@ const SAMPLE = `Date,Reference,Description,Amount
 2026-10-12,UNIBANK-90001,"Virement Entreprise B TR-4823",2000000.00
 2026-10-12,UNIBANK-90002,Bank charges,-150.00`;
 
-function toBase64(buf: ArrayBuffer): string {
+export function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
