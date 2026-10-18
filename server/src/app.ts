@@ -14,6 +14,7 @@ import * as alerts from './services/fuel-alerts.js';
 import * as bankAi from './services/bank-ai.js';
 import * as dashboardSvc from './services/dashboard.js';
 import * as usage from './services/company-usage.js';
+import * as perf from './services/station-performance.js';
 import * as reportsAi from './services/reports-ai.js';
 import * as disputeAi from './services/dispute-ai.js';
 import * as statementAi from './services/statement-ai.js';
@@ -237,6 +238,22 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
 
     // ---- corporate portal
     api.get('/api/companies/:id/dashboard', async (req) => reports.companyDashboard(ctx, req.actor, params(req)));
+    // station performance: each station's own monthly sales (entered or imported, with history), month to month and year to year
+    api.get('/api/stations/performance', async (req) => {
+      const q = z.object({ stationId: id.optional(), months: z.coerce.number().int().optional(), grade: z.enum(['diesel', 'gasoline']).optional() }).parse(req.query);
+      return perf.stationPerformance(ctx, req.actor, q);
+    });
+    api.post('/api/stations/:id/actuals', async (req) => {
+      const b = body(z.object({ month: z.string(), lines: z.array(z.object({ grade: z.enum(['diesel', 'gasoline']), gallons: z.number(), amount: z.number().nullable().optional() })).max(2) }), req);
+      return perf.recordActuals(ctx, req.actor, params(req), b.month, b.lines);
+    });
+    api.post('/api/stations/:id/actuals/delete', async (req) =>
+      perf.deleteActuals(ctx, req.actor, params(req), body(z.object({ month: z.string() }), req).month));
+    api.post('/api/stations/actuals/import', { bodyLimit: 4_000_000 }, async (req) => {
+      const b = body(z.object({ csv: z.string().min(10).max(2_000_000).optional(), xlsx: z.string().min(10).max(3_900_000).optional() })
+        .refine((v) => !!v.csv !== !!v.xlsx, 'Send either csv or xlsx'), req);
+      return perf.importActuals(ctx, req.actor, b.xlsx ? readXlsx(Buffer.from(b.xlsx, 'base64')) : b.csv!);
+    });
     // fuel usage dashboard: given vs used, stations, fuel, month by month, with flags (company, or distributor for any company)
     api.get('/api/companies/:id/usage', async (req) => {
       const q = z.object({ months: z.coerce.number().int().optional(), dept: z.string().optional() }).parse(req.query);

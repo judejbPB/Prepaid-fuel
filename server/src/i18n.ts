@@ -85,6 +85,7 @@ const NOUN: Record<string, string> = {
   Redemption: 'Transaction carburant',
   Exception: 'Exception',
   Company: 'Entreprise',
+  Station: 'Station',
   'Funding request': 'Demande de financement',
   company: 'Entreprise',
   employee: 'Employé',
@@ -206,6 +207,14 @@ const EXACT: Record<string, string> = {
   // dashboard.ts
   'Choose a period of at most 400 days': 'Choisissez une période de 400 jours au maximum',
   'Choose 3, 6 or 12 months': 'Choisissez 3, 6 ou 12 mois',
+  'Choose 12 or 24 months': 'Choisissez 12 ou 24 mois',
+  'Use a month like 2026-09': 'Indiquez un mois au format 2026-09',
+  'You cannot enter sales for a future month': 'Impossible de saisir les ventes d’un mois à venir',
+  'Enter the gallons sold for at least one fuel': 'Saisissez les gallons vendus pour au moins un carburant',
+  'Enter gallons as a number of 0 or more': 'Saisissez les gallons sous forme de nombre supérieur ou égal à 0',
+  'Enter the amount as a number of 0 or more': 'Saisissez le montant sous forme de nombre supérieur ou égal à 0',
+  'The sheet needs a month column and either a gallons column or diesel and gazoline columns': 'Le fichier doit avoir une colonne mois et une colonne gallons, ou des colonnes diesel et gazoline',
+  'Add a station column so each line can be matched to a station': 'Ajoutez une colonne station pour rattacher chaque ligne à une station',
 
   // sage.ts
   'Journal code: 1 to 6 letters or digits': 'Code journal : 1 à 6 lettres ou chiffres',

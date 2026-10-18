@@ -8,6 +8,7 @@ import { FuelAlerts } from './alerts';
 import { ReportsAssistant } from './assistant';
 import { ReportsDashboard } from './reports';
 import { CompanyUsagePicker } from './usage';
+import { StationPerformance } from './station-perf';
 import { BankStatements, RefundsTable } from './finance';
 import { ExceptionsPanel } from './shared';
 import { t } from '../i18n';
@@ -18,7 +19,7 @@ export default function Distributor() {
   return (
     <Authed surface="distributor">
       <Shell surface="distributor" nav={[
-        ['/distributor', t('Overview')], ['/distributor/reports', t('Reporting')], ['/distributor/usage', t('Company fuel usage')], ['/distributor/funding', t('Funding queue')], ['/distributor/bank', t('Bank statements')],
+        ['/distributor', t('Overview')], ['/distributor/reports', t('Reporting')], ['/distributor/usage', t('Company fuel usage')], ['/distributor/stations-performance', t('Station performance')], ['/distributor/funding', t('Funding queue')], ['/distributor/bank', t('Bank statements')],
         ['/distributor/refunds', t('Refunds')], ['/distributor/exceptions', t('Exceptions')], ['/distributor/alerts', t('Fuel alerts')],
         ['/distributor/shifts', t('Shift reconciliation')], ['/distributor/network', t('Clients & stations')],
         ['/distributor/ledger', t('Ledger')], ['/distributor/assistant', t('Ask the figures')], ['/distributor/accounting', t('Sage export')], ['/distributor/audit', t('Audit log')],
@@ -37,6 +38,7 @@ export default function Distributor() {
           <Route path="assistant" element={<ReportsAssistant surface="distributor" />} />
           <Route path="reports" element={<ReportsDashboard />} />
           <Route path="usage" element={<CompanyUsagePicker />} />
+          <Route path="stations-performance" element={<StationPerformance surface="distributor" />} />
           <Route path="audit" element={<Audit />} />
         </Routes>
       </Shell>

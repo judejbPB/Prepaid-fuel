@@ -226,6 +226,21 @@ CREATE TABLE IF NOT EXISTS dispute_messages (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A station's own monthly sales (all customers, not only ALFA), entered or imported by the station or the
+-- distributor, including history from before ALFA (services/station-performance.ts).
+CREATE TABLE IF NOT EXISTS station_actuals (
+  id INTEGER PRIMARY KEY,
+  station_id INTEGER NOT NULL REFERENCES stations(id),
+  month TEXT NOT NULL,
+  grade TEXT NOT NULL CHECK (grade IN ('diesel','gasoline')),
+  gallons_mgal INTEGER NOT NULL CHECK (gallons_mgal >= 0),
+  amount_minor INTEGER CHECK (amount_minor >= 0),
+  source TEXT NOT NULL DEFAULT 'entry' CHECK (source IN ('entry','import')),
+  entered_by INTEGER REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (station_id, month, grade)
+);
+
 -- Suspicious fueling alerts for a person to review (services/fuel-alerts.ts). One row per pattern (dedupe_key).
 CREATE TABLE IF NOT EXISTS fuel_alerts (
   id INTEGER PRIMARY KEY,
