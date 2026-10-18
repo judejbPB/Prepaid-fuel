@@ -21,7 +21,9 @@ const GRADES = ['diesel', 'gasoline'];
 
 export default function Station() {
   const [terminal, setTerminal] = useState(session.terminalInfo());
-  const [managerMode, setManagerMode] = useState(false);
+  // A manager signs in without activating a terminal. Their session survives a reload, so a signed-in device
+  // with no terminal goes back to the manager view instead of the activation screen.
+  const [managerMode, setManagerMode] = useState(() => !session.terminalInfo() && !!session.token('station'));
   if (!terminal && !managerMode) return <Activate onActivated={setTerminal} onManager={() => setManagerMode(true)} />;
   const resetTerminal = () => { session.clearTerminal(); setTerminal(null); setManagerMode(false); };
   const extra = terminal
