@@ -13,6 +13,7 @@ import * as bank from './services/bank.js';
 import * as alerts from './services/fuel-alerts.js';
 import * as bankAi from './services/bank-ai.js';
 import * as dashboardSvc from './services/dashboard.js';
+import * as usage from './services/company-usage.js';
 import * as reportsAi from './services/reports-ai.js';
 import * as disputeAi from './services/dispute-ai.js';
 import * as statementAi from './services/statement-ai.js';
@@ -236,6 +237,11 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
 
     // ---- corporate portal
     api.get('/api/companies/:id/dashboard', async (req) => reports.companyDashboard(ctx, req.actor, params(req)));
+    // fuel usage dashboard: given vs used, stations, fuel, month by month, with flags (company, or distributor for any company)
+    api.get('/api/companies/:id/usage', async (req) => {
+      const q = z.object({ months: z.coerce.number().int().optional(), dept: z.string().optional() }).parse(req.query);
+      return usage.companyUsage(ctx, req.actor, params(req), q);
+    });
     api.get('/api/companies/:id/employees', async (req) => admin.listEmployees(ctx, req.actor, params(req)));
     api.post('/api/companies/:id/employees', async (req) =>
       admin.createEmployee(ctx, req.actor, {

@@ -52,7 +52,7 @@ function toCsv(data: any) {
   return '﻿' + rows.map((r) => r.map(cell).join(';')).join('\r\n');
 }
 
-function download(name: string, text: string) {
+export function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
   const a = Object.assign(document.createElement('a'), { href: url, download: name });
   document.body.appendChild(a); a.click(); a.remove();
