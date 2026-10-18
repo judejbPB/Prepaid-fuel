@@ -12,6 +12,7 @@ import * as alloc from './services/allocation.js';
 import * as bank from './services/bank.js';
 import * as alerts from './services/fuel-alerts.js';
 import * as bankAi from './services/bank-ai.js';
+import * as dashboardSvc from './services/dashboard.js';
 import * as reportsAi from './services/reports-ai.js';
 import * as disputeAi from './services/dispute-ai.js';
 import * as statementAi from './services/statement-ai.js';
@@ -135,6 +136,12 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
 
     // ---- distributor
     api.get('/api/distributor/dashboard', async (req) => ({ ...reports.distributorDashboard(ctx, req.actor), open_fuel_alerts: alerts.openAlertCount(ctx) }));
+
+    // ---- reporting dashboard (distributor): key figures for a period vs the previous one
+    api.get('/api/reports/dashboard', async (req) => {
+      const q = z.object({ from: z.string(), to: z.string(), companyId: id.optional(), stationId: id.optional() }).parse(req.query);
+      return dashboardSvc.dashboard(ctx, req.actor, q);
+    });
 
     // ---- reports assistant: questions in plain language, answered from read-only report tools within the user's scope
     api.post('/api/reports/ask', async (req) =>
