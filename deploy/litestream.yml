@@ -1,0 +1,17 @@
+# Off-site copy of the database: Litestream streams every change (about once a second) to S3-compatible
+# object storage (Cloudflare R2, Backblaze B2, DigitalOcean Spaces, AWS S3…), keeps a daily full snapshot and
+# 30 days of history, so the database can be restored to any moment in the last 30 days.
+dbs:
+  - path: /data/bousol.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: alfa/bousol.db
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        sync-interval: 1s
+        snapshot-interval: 24h
+        retention: 720h
+        validation-interval: 12h

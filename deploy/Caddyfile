@@ -1,0 +1,27 @@
+# HTTPS for ALFA: Caddy gets and renews the certificate for $DOMAIN automatically (Let's Encrypt).
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=()"
+		-Server
+	}
+
+	# Statement uploads are up to 4 MB.
+	request_body {
+		max_size 5MB
+	}
+
+	reverse_proxy app:8787 {
+		health_uri /api/health
+		health_interval 30s
+	}
+}
