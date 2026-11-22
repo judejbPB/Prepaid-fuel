@@ -177,16 +177,20 @@ attempts) lives in `server/src/context.ts`.
 
 ## Deploying
 
-```bash
-docker build -t bousol-fuel .
-docker run -d -p 8787:8787 -v bousol-data:/data \
-  -e ADMIN_LOGIN=you@yourco -e ADMIN_PASSWORD='a-long-passphrase' bousol-fuel
-```
+Production runs on one server with Docker: the app, Caddy for HTTPS and Litestream for a continuous off-site
+copy of the database, plus checked local snapshots every 6 hours. **[deploy/README.md](deploy/README.md)** is
+the runbook: what to rent, first installation, the monthly restore drill, real restores, updates and rollback.
+Every merge to `main` publishes the image `ghcr.io/judejbpb/prepaid-fuel` (`.github/workflows/docker.yml`).
 
-On first boot with an empty database the server creates the distributor admin from `ADMIN_LOGIN` /
-`ADMIN_PASSWORD` (12+ characters). Everything else (companies, prices, stations, terminals, staff) is set up
-from the control center. Put it behind HTTPS (e.g. a reverse proxy or your host's TLS) and back up the
-`/data` volume. Do **not** run `npm run seed` in production: it wipes the database and loads demo data.
+In production (`NODE_ENV=production`) the server:
+- refuses to start on an empty database without `ADMIN_LOGIN` / `ADMIN_PASSWORD`, or on a database that holds
+  the demo accounts;
+- writes every commit to disk before confirming it;
+- shuts down cleanly on `docker stop`;
+- reports database and backup health at `/api/health`.
+
+`npm run seed` refuses to run there. `npm run verify-db -w server -- <file>` checks any database file:
+integrity, ledger balances and record counts.
 
 ## Languages
 The apps are in **French by default**, with English available from the FR | EN switch on every sign-in

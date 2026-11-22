@@ -38,8 +38,17 @@ const money = z.number().positive().max(1e10);
 const id = z.coerce.number().int().positive();
 const gradeMap = z.record(z.string(), z.number().nonnegative()).default({});
 
-export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean } = {}) {
-  const app = Fastify({ logger: opts.logger ?? false });
+export interface AppOptions {
+  staticDir?: string;
+  logger?: boolean;
+  /** Behind a reverse proxy (Caddy): take the client address from X-Forwarded-For. */
+  trustProxy?: boolean;
+  /** Extra health facts (e.g. backup age); `ok: false` makes /api/health answer 503 so monitoring alerts. */
+  health?: () => { ok: boolean } & Record<string, unknown>;
+}
+
+export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
+  const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? false });
 
   // Messages are written in English; they are translated per request (x-lang header, French by default).
   app.setErrorHandler((err: any, req, reply) => {
@@ -70,7 +79,15 @@ export function buildApp(ctx: Ctx, opts: { staticDir?: string; logger?: boolean 
   const body = <T extends z.ZodTypeAny>(schema: T, req: FastifyRequest): z.infer<T> => schema.parse(req.body ?? {});
 
   // -------------------------------------------------------------------- public
-  app.get('/api/health', async () => ({ ok: true }));
+  // Uptime monitors poll this: 200 when the database answers (and backups are fresh), 503 otherwise. No secrets.
+  app.get('/api/health', async (_req, reply) => {
+    let db = 'ok';
+    try { ctx.db.get('SELECT 1'); } catch { db = 'error'; }
+    const extra = opts.health?.() ?? { ok: true };
+    const ok = db === 'ok' && extra.ok;
+    reply.status(ok ? 200 : 503);
+    return { ...extra, ok, db };
+  });
 
   app.post('/api/auth/login', async (req) => {
     const input = body(z.object({ login: z.string().min(1), password: z.string().min(1) }), req);

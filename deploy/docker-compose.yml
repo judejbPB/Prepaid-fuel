@@ -1,0 +1,63 @@
+# ALFA production stack for one server: the app, Caddy (HTTPS) and Litestream (off-site database copy).
+# Usage (see README.md in this folder):  cp .env.example .env  →  edit .env  →  docker compose up -d
+name: alfa
+
+services:
+  app:
+    image: ${ALFA_IMAGE:-ghcr.io/judejbpb/prepaid-fuel:latest}
+    restart: unless-stopped
+    init: true
+    # Only what the app needs (the storage keys stay with Litestream).
+    environment:
+      NODE_ENV: production
+      DB_PATH: /data/bousol.db
+      TRUST_PROXY: "1"
+      ADMIN_LOGIN: ${ADMIN_LOGIN:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Distributor admin}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-6}
+      BACKUP_KEEP: ${BACKUP_KEEP:-28}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - alfa-data:/data
+    # Not published: only Caddy talks to the app.
+    expose: ["8787"]
+    stop_grace_period: 30s
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env (certificate expiry notices)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+  litestream:
+    image: litestream/litestream:0.3.13
+    restart: unless-stopped
+    # Same user as the app, so files it restores into the data volume belong to the app.
+    user: "1000:1000"
+    depends_on: [app]
+    command: replicate
+    environment:
+      LITESTREAM_BUCKET: ${LITESTREAM_BUCKET:?Set LITESTREAM_BUCKET in .env}
+      LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT:-}
+      LITESTREAM_REGION: ${LITESTREAM_REGION:-auto}
+      LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID:?Set LITESTREAM_ACCESS_KEY_ID in .env}
+      LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY:?Set LITESTREAM_SECRET_ACCESS_KEY in .env}
+    volumes:
+      - alfa-data:/data
+      - ./litestream.yml:/etc/litestream.yml:ro
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+volumes:
+  alfa-data:
+  caddy-data:
+  caddy-config:

@@ -417,8 +417,17 @@ export class Db {
 
   constructor(path = ':memory:') {
     this.raw = new DatabaseSync(path);
-    this.raw.exec('PRAGMA journal_mode = WAL;');
+    // WAL lets reads continue during a write. synchronous = FULL syncs every commit to disk, so a power cut
+    // cannot lose a fueling or a deposit that was already confirmed. busy_timeout waits for a backup or the
+    // replication process instead of failing straight away.
+    this.raw.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;');
     this.raw.exec(SCHEMA);
+  }
+
+  /** Writes the WAL back into the main file and closes the database (on shutdown). */
+  close() {
+    try { this.raw.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch { /* in-memory or already closed */ }
+    this.raw.close();
   }
 
   all<T = any>(sql: string, ...params: Param[]): T[] {

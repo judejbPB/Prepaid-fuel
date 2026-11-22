@@ -8,7 +8,8 @@
     "start": "NODE_OPTIONS=--disable-warning=ExperimentalWarning tsx src/index.ts",
     "seed": "NODE_OPTIONS=--disable-warning=ExperimentalWarning tsx src/seed.ts",
     "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify-db": "NODE_OPTIONS=--disable-warning=ExperimentalWarning tsx src/verify-db.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
