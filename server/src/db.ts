@@ -422,6 +422,14 @@ export class Db {
     // replication process instead of failing straight away.
     this.raw.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;');
     this.raw.exec(SCHEMA);
+    // Columns added after the first release: existing databases get them on open (CREATE TABLE IF NOT EXISTS
+    // leaves an existing table as it was). Station location and opening hours feed the station map.
+    this.addColumns('stations', { lat: 'REAL', lng: 'REAL', hours: 'TEXT' });
+  }
+
+  private addColumns(table: string, columns: Record<string, string>) {
+    const have = new Set((this.raw.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
+    for (const [name, type] of Object.entries(columns)) if (!have.has(name)) this.raw.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
 
   /** Writes the WAL back into the main file and closes the database (on shutdown). */

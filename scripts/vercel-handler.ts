@@ -6,7 +6,7 @@ import { BlobNotFoundError, get, head, put } from '@vercel/blob';
 import { buildApp } from '../server/src/app.js';
 import { createCtx, type Ctx } from '../server/src/context.js';
 import { attachDemoPersistence, PersistentDemo, type SnapshotStore } from '../server/src/demo-persist.js';
-import { seedDemo } from '../server/src/demo.js';
+import { placeDemoStations, seedDemo } from '../server/src/demo.js';
 
 const SNAPSHOT = 'demo/bousol-demo.db';
 
@@ -47,7 +47,7 @@ const log = (m: string) => {
 };
 
 const persistent = process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID
-  ? new PersistentDemo(blobStore, '/tmp/bousol-demo.db', (ctx) => { seedDemo(ctx); }, log)
+  ? new PersistentDemo(blobStore, '/tmp/bousol-demo.db', (ctx) => { seedDemo(ctx); }, log, undefined, placeDemoStations)
   : null;
 if (persistent) status.mode = 'blob';
 

@@ -10,6 +10,7 @@ import { QrScanner } from '../scanner';
 import { Authed, Empty, Status, useAction, useLoad, useLogout, useMe } from '../ui';
 import { locale, t } from '../i18n';
 import { LangToggle } from '../i18n/LangToggle';
+import { FuelNearMe } from './station-map';
 
 const e = api('employee');
 /** How long an approval code is shown; matches the station's challenge rotation plus grace. */
@@ -85,6 +86,7 @@ function Wallet() {
         <Route path="pay/code" element={<ShowCode code={code} />} />
         <Route path="receipt/:id" element={<Receipt />} />
         <Route path="history" element={<History w={view} reload={reload} online={online} />} />
+        <Route path="stations" element={<FuelNearMe />} />
       </Routes>
     </Phone>
   );
@@ -100,6 +102,7 @@ function Phone({ children, tabs }: { children?: React.ReactNode; tabs?: boolean 
             <NavLink to="/employee" end>{t('My fuel')}</NavLink>
             <NavLink to="/employee/pay">{t('Pay at pump')}</NavLink>
             <NavLink to="/employee/history">{t('History')}</NavLink>
+            <NavLink to="/employee/stations">{t('Stations')}</NavLink>
           </nav>
         )}
       </div>

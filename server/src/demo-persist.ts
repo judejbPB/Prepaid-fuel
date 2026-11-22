@@ -31,6 +31,8 @@ export class PersistentDemo {
     private log: (msg: string) => void = () => {},
     /** How long a plain read may go without checking the store (keeps polling screens cheap). */
     private recheckMs = 30_000,
+    /** Run on every database opened (seeded or loaded), to bring a snapshot saved by an older release up to date. */
+    private upgrade: (ctx: Ctx) => void = () => {},
   ) {
     this.ctx = {} as Ctx;
   }
@@ -119,6 +121,7 @@ export class PersistentDemo {
     if (bytes) writeFileSync(this.file, bytes);
     const next = createCtx(this.file);
     next.config.demoTerminals = true;
+    this.upgrade(next);
     Object.assign(this.ctx, next);
   }
 }

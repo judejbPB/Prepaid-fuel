@@ -208,6 +208,7 @@ const EXACT: Record<string, string> = {
   'Choose a period of at most 400 days': 'Choisissez une période de 400 jours au maximum',
   'Choose 3, 6 or 12 months': 'Choisissez 3, 6 ou 12 mois',
   'Choose 12 or 24 months': 'Choisissez 12 ou 24 mois',
+  'That point is outside Haiti. Check the latitude and longitude.': 'Ce point est hors d’Haïti. Vérifiez la latitude et la longitude.',
   'Use a month like 2026-09': 'Indiquez un mois au format 2026-09',
   'You cannot enter sales for a future month': 'Impossible de saisir les ventes d’un mois à venir',
   'Enter the gallons sold for at least one fuel': 'Saisissez les gallons vendus pour au moins un carburant',
