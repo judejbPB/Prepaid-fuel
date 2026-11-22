@@ -43,4 +43,9 @@
     <!-- QR scanning: the station scans the employee's approval code, the wallet scans the station's QR. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Station map: the wallet sorts stations by distance; a station manager places the station from the pump.
+         Asked only when the map opens; refusing still shows the map and list. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 </manifest>

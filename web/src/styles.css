@@ -278,3 +278,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--n
 .dash-filters .seg { flex-wrap: wrap; }
 .dash-filters .seg button { white-space: nowrap; flex: 0 0 auto; }
 .nowrap { white-space: nowrap; }
+
+/* Station map (web/src/map.tsx) */
+.station-map { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); z-index: 0; }
+.map-pick span { display: block; width: 22px; height: 22px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  background: var(--amber); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.map-list { display: flex; flex-direction: column; gap: 8px; }
+button.map-item, div.map-item { display: block; text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--paper); color: var(--ink); font: inherit; font-weight: 400; cursor: pointer; width: 100%; height: auto; min-height: 0; }
+button.map-item:hover { background: var(--cream); color: var(--ink); }
+.map-item.on { border-color: var(--navy-3, #2D2A6D); box-shadow: 0 0 0 2px var(--navy-3, #2D2A6D) inset; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; margin-top: 8px; }
+.map-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }

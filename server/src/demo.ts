@@ -11,6 +11,21 @@ export const DEMO_PASSWORD = 'demo1234';
 export const DEMO_PIN = '1234';
 
 /** Sample data matching the solution overview mockups. All names are illustrative. */
+/** Where the four demo stations sit on the map (around Port-au-Prince). */
+export const DEMO_STATION_PLACES = [
+  { lat: 18.5553, lng: -72.2994, address: 'Route de Delmas, Delmas 33', hours: '6h–22h, 7j/7' },
+  { lat: 18.5125, lng: -72.2853, address: 'Rue Grégoire, Pétion-Ville', hours: '6h–21h, 7j/7' },
+  { lat: 18.5411, lng: -72.3990, address: 'Route de Carrefour, Mariani', hours: '24h/24' },
+  { lat: 18.5806, lng: -72.2700, address: 'Route de Tabarre, Tabarre 27', hours: '6h–20h, lun.–sam.' },
+];
+
+/** Demo databases saved before stations had a location: place Station 1–4 where the demo puts them. */
+export function placeDemoStations(ctx: Ctx) {
+  DEMO_STATION_PLACES.forEach((p, i) => ctx.db.run(
+    'UPDATE stations SET lat = ?, lng = ?, hours = COALESCE(hours, ?), address = ? WHERE name = ? AND lat IS NULL',
+    p.lat, p.lng, p.hours, p.address, `Station ${i + 1}`));
+}
+
 export function seedDemo(ctx: Ctx) {
   const { db } = ctx;
   ctx.config.demoTerminals = true;
@@ -26,7 +41,9 @@ export function seedDemo(ctx: Ctx) {
 
   // Stations and terminals (activation codes are fixed so the demo is repeatable)
   const stations = [1, 2, 3, 4].map((n) => {
-    const s = admin.createStation(ctx, null, { name: `Station ${n}`, address: `Route ${n}, Port-au-Prince` });
+    const s = admin.createStation(ctx, null, { name: `Station ${n}`, address: DEMO_STATION_PLACES[n - 1].address });
+    const p = DEMO_STATION_PLACES[n - 1];
+    db.run('UPDATE stations SET lat = ?, lng = ?, hours = ? WHERE id = ?', p.lat, p.lng, p.hours, s.id);
     const t = admin.createTerminal(ctx, null, { stationId: s.id, label: `T-0${n}` });
     db.run('UPDATE terminals SET activation_code = ? WHERE id = ?', `STATION${n}`, t.id);
     // Pre-register the demo key so a device activated before a re-seed is still recognised.

@@ -1,5 +1,6 @@
 import { ReportsAssistant } from './assistant';
 import { CompanyUsage } from './usage';
+import { CompanyMap } from './station-map';
 import { useMemo, useState } from 'react';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 import { api, cap, date, gal, money, when } from '../api';
@@ -18,11 +19,12 @@ export default function Corporate() {
   return (
     <Authed surface="corporate">
       <Shell surface="corporate" nav={[
-        ['/corporate', t('Overview')], ['/corporate/usage', t('Fuel usage')], ['/corporate/allocations', t('Allocations')], ['/corporate/employees', t('Employees')], ['/corporate/statement', t('Statement')], ['/corporate/assistant', t('Ask the figures')],
+        ['/corporate', t('Overview')], ['/corporate/usage', t('Fuel usage')], ['/corporate/map', t('Station map')], ['/corporate/allocations', t('Allocations')], ['/corporate/employees', t('Employees')], ['/corporate/statement', t('Statement')], ['/corporate/assistant', t('Ask the figures')],
       ]}>
         <Routes>
           <Route index element={<Overview />} />
           <Route path="usage" element={<CompanyUsage />} />
+          <Route path="map" element={<CompanyMap />} />
           <Route path="allocations" element={<Allocations />} />
           <Route path="employees" element={<Employees />} />
           <Route path="statement" element={<Statement />} />

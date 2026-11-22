@@ -14,6 +14,7 @@ import {
 import { Authed, BrandLogo, Empty, Kpi, PageHead, Shell, Status, useAction, useLoad, useLogout, useMe } from '../ui';
 import { ExceptionsPanel } from './shared';
 import { StationPerformance } from './station-perf';
+import { MyStationMap } from './station-map';
 import { Route, Routes } from 'react-router-dom';
 
 const s = api('station');
@@ -427,9 +428,10 @@ function Manager() {
   const { data } = useLoad(() => s.get(`/api/stations/${me.stationId}/overview`), [], 15000);
   const shifts = useLoad(() => s.get('/api/shifts'), [], 15000);
   return (
-    <Shell surface="station" nav={[['/station', t('Station overview')], ['/station/performance', t('Station performance')]]}>
+    <Shell surface="station" nav={[['/station', t('Station overview')], ['/station/performance', t('Station performance')], ['/station/map', t('My station on the map')]]}>
       <Routes>
         <Route path="performance" element={<StationPerformance surface="station" />} />
+        <Route path="map" element={<MyStationMap />} />
         <Route path="*" element={<ManagerOverview data={data} shifts={shifts.data} />} />
       </Routes>
     </Shell>

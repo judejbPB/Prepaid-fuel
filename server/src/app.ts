@@ -15,6 +15,7 @@ import * as bankAi from './services/bank-ai.js';
 import * as dashboardSvc from './services/dashboard.js';
 import * as usage from './services/company-usage.js';
 import * as perf from './services/station-performance.js';
+import * as stationMap from './services/station-map.js';
 import * as reportsAi from './services/reports-ai.js';
 import * as disputeAi from './services/dispute-ai.js';
 import * as statementAi from './services/statement-ai.js';
@@ -255,6 +256,13 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
 
     // ---- corporate portal
     api.get('/api/companies/:id/dashboard', async (req) => reports.companyDashboard(ctx, req.actor, params(req)));
+    // station map: what each user needs to see (employee: where to fuel; company: where its employees fuel;
+    // station manager: their location; distributor: network health); location set by the manager or admin
+    api.get('/api/map', async (req) => stationMap.stationMap(ctx, req.actor));
+    api.post('/api/stations/:id/location', async (req) => {
+      const b = body(z.object({ lat: z.number(), lng: z.number(), address: z.string().max(200).nullable().optional(), hours: z.string().max(100).nullable().optional() }), req);
+      return stationMap.setStationLocation(ctx, req.actor, params(req), b);
+    });
     // station performance: each station's own monthly sales (entered or imported, with history), month to month and year to year
     api.get('/api/stations/performance', async (req) => {
       const q = z.object({ stationId: id.optional(), months: z.coerce.number().int().optional(), grade: z.enum(['diesel', 'gasoline']).optional() }).parse(req.query);
