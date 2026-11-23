@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { Db } from './db.js';
-import { AppError, forbidden } from './errors.js';
+import { AppError, badRequest, forbidden } from './errors.js';
+import { assertNotLocked, clearFailures, passwordProblem, recordFailure, RULES } from './security.js';
 
 export type Role =
   | 'dist_admin' | 'dist_treasury' | 'dist_approver'
@@ -55,15 +56,30 @@ export function resolveTerminal(db: Db, terminalKey: string | undefined) {
 }
 
 const SESSION_HOURS = 12;
+/** Back-office sessions (distributor, company, station manager) end after this long without use. */
+export const IDLE_MINUTES = 60;
+const BACK_OFFICE: Role[] = [...DISTRIBUTOR, ...COMPANY, 'st_manager'];
+
+// Compared against when the login does not exist, so an unknown login takes as long as a wrong password.
+let dummyHash: string | null = null;
 
 export function login(
   db: Db,
-  input: { login: string; password: string; deviceId?: string; terminalKey?: string },
+  input: { login: string; password: string; deviceId?: string; terminalKey?: string; ip?: string },
 ) {
-  const user = db.get("SELECT * FROM users WHERE login = ? AND status = 'active'", input.login.trim().toLowerCase());
-  if (!user || !verifySecret(input.password, user.password_hash)) {
+  const name = input.login.trim().toLowerCase();
+  const accountKey = `login:${name}`;
+  const ipKey = `ip:${input.ip ?? 'unknown'}`;
+  assertNotLocked(db, [accountKey, ipKey]);
+  const user = db.get("SELECT * FROM users WHERE login = ? AND status = 'active'", name);
+  const ok = user ? verifySecret(input.password, user.password_hash) : (verifySecret(input.password, dummyHash ??= hashSecret('x')), false);
+  if (!ok) {
+    const locked = recordFailure(db, accountKey, RULES.login);
+    recordFailure(db, ipKey, RULES.loginIp);
+    db.audit(null, locked ? 'login.locked' : 'login.failed', 'user', user?.id ?? null, { login: name, ip: input.ip ?? null });
     throw new AppError(401, 'bad_credentials', 'Invalid login or password');
   }
+  clearFailures(db, accountKey);
 
   let terminalId: number | null = null;
   if (user.role === 'st_attendant') {
@@ -93,10 +109,10 @@ export function login(
 
   const token = randomToken();
   db.run(
-    "INSERT INTO sessions (token_hash, user_id, device_id, terminal_id, expires_at) VALUES (?,?,?,?, datetime('now', ?))",
+    "INSERT INTO sessions (token_hash, user_id, device_id, terminal_id, expires_at, last_seen) VALUES (?,?,?,?, datetime('now', ?), datetime('now'))",
     sha256(token), user.id, input.deviceId ?? null, terminalId, `+${SESSION_HOURS} hours`,
   );
-  db.audit(user.id, 'login', 'user', user.id, { terminalId });
+  db.audit(user.id, 'login', 'user', user.id, { terminalId, ip: input.ip ?? null });
   return { token, actor: actorFor(db, user.id, terminalId, input.deviceId ?? null) };
 }
 
@@ -117,15 +133,51 @@ export function actorFor(db: Db, userId: number, terminalId: number | null, devi
 
 export function authenticate(db: Db, token: string | undefined): Actor {
   if (!token) throw new AppError(401, 'unauthenticated', 'Sign in required');
+  const hash = sha256(token);
   const s = db.get(
-    `SELECT s.*, u.status FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT s.*, u.status, u.role, s.last_seen < datetime('now', ?) AS idle, s.last_seen < datetime('now', '-5 minutes') AS stale
+       FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > datetime('now')`,
-    sha256(token),
+    `-${IDLE_MINUTES} minutes`, hash,
   );
   if (!s || s.status !== 'active') throw new AppError(401, 'unauthenticated', 'Session expired');
+  // A back-office screen left open: sign out after an hour without use. Terminals and wallets are exempt
+  // (a shift runs all day; the wallet works offline and asks for the PIN at every payment).
+  if (BACK_OFFICE.includes(s.role) && s.idle) {
+    db.run('DELETE FROM sessions WHERE token_hash = ?', hash);
+    throw new AppError(401, 'unauthenticated', 'Signed out after an hour without activity. Sign in again.');
+  }
+  // Recorded at most every 5 minutes, to keep reads from writing on every request.
+  if (s.stale || !s.last_seen) db.run("UPDATE sessions SET last_seen = datetime('now') WHERE token_hash = ?", hash);
   return actorFor(db, s.user_id, s.terminal_id, s.device_id);
 }
 
 export function logout(db: Db, token: string) {
   db.run('DELETE FROM sessions WHERE token_hash = ?', sha256(token));
+}
+
+/**
+ * The signed-in user changes their own password: the current one is required (and counts towards the sign-in
+ * lock), the new one must meet the rules, and every other session of the account is signed out.
+ */
+export function changePassword(db: Db, actor: Actor, token: string, current: string, next: string) {
+  const user = db.get('SELECT id, login, password_hash FROM users WHERE id = ?', actor.userId);
+  const accountKey = `login:${user.login}`;
+  assertNotLocked(db, [accountKey]);
+  if (!verifySecret(current, user.password_hash)) {
+    const locked = recordFailure(db, accountKey, RULES.login);
+    db.audit(actor.userId, locked ? 'login.locked' : 'password.change_failed', 'user', actor.userId);
+    throw forbidden('Your current password is incorrect');
+  }
+  // Employees keep the shorter rule they were created with; staff accounts get the full rules.
+  const problem = actor.role === 'employee' ? (next.trim().length < 8 ? 'Use at least 8 characters' : null) : passwordProblem(next, user.login);
+  if (problem) throw badRequest('weak_password', problem);
+  if (verifySecret(next, user.password_hash)) throw badRequest('weak_password', 'Choose a password different from the current one');
+  db.tx(() => {
+    db.run('UPDATE users SET password_hash = ? WHERE id = ?', hashSecret(next.trim()), actor.userId);
+    const others = db.run('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?', actor.userId, sha256(token)).changes;
+    db.audit(actor.userId, 'password.change', 'user', actor.userId, { other_sessions_ended: others });
+  });
+  clearFailures(db, accountKey);
+  return { ok: true };
 }

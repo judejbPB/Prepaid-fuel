@@ -76,8 +76,11 @@ describe('persistent hosted demo', () => {
     const a = await instance(store);
     const before = store.saves;
     await a('GET', '/api/health');
-    await a('POST', '/api/auth/login', { body: { login: 'nobody', password: 'x' } });
+    await a('GET', '/api/me'); // refused without a session; nothing stored
     expect(store.saves).toBe(before);
+    // A failed sign-in is stored on purpose (it counts towards the lock), so it is saved.
+    await a('POST', '/api/auth/login', { body: { login: 'nobody', password: 'x' } });
+    expect(store.saves).toBe(before + 1);
   });
 });
 

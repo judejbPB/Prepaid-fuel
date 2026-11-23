@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import { lastSnapshotAgeHours, pruneSnapshots, snapshot } from './backup.js';
 import { createCtx } from './context.js';
+import { purgeExpired } from './security.js';
 import { createUser } from './services/admin.js';
 import { runRecurring } from './services/allocation.js';
 
@@ -55,8 +56,10 @@ const app = buildApp(ctx, {
   health: () => ({ ...backupHealth(), version: env.APP_VERSION ?? 'dev' }),
 });
 
-// Recurring monthly benefits: check hourly; each schedule posts at most once per month.
+// Recurring monthly benefits: check hourly; each schedule posts at most once per month. Expired sessions and
+// old sign-in throttle rows are cleared at the same time.
 setInterval(() => {
+  try { purgeExpired(ctx.db); } catch (err) { app.log.error(err, 'purge failed'); }
   try {
     const results = runRecurring(ctx, null);
     if (results.length) app.log.info({ results }, 'recurring allocations run');

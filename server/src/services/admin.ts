@@ -4,6 +4,7 @@ import { badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { acct, type Line } from '../ledger.js';
 import { PIN_KDF, validatePublicJwk } from '../offline.js';
 import { GRADES, toMinor, today } from '../units.js';
+import { assertNotLocked, clearFailures, recordFailure, RULES } from '../security.js';
 
 // ---------------------------------------------------------------------------
 // Organisation setup (distributor)
@@ -51,7 +52,8 @@ export function createTerminal(ctx: Ctx, actor: Actor | null, input: { stationId
     ctx.db.run("UPDATE terminals SET status = 'retired', device_key_hash = NULL WHERE station_id = ? AND status != 'retired'", input.stationId);
     const code = randomToken(6).toUpperCase().replace(/[^A-Z0-9]/g, 'X').slice(0, 8);
     const id = ctx.db.run(
-      'INSERT INTO terminals (station_id, label, activation_code) VALUES (?,?,?)',
+      // The code is good for one activation within 7 days; after that the admin issues a new terminal.
+      "INSERT INTO terminals (station_id, label, activation_code, activation_expires_at) VALUES (?,?,?, datetime('now', '+7 days'))",
       input.stationId, input.label, code,
     ).id;
     ctx.db.audit(actor?.userId ?? null, 'terminal.create', 'terminal', id, input);
@@ -63,7 +65,20 @@ export function createTerminal(ctx: Ctx, actor: Actor | null, input: { stationId
 /** Demo terminals only (see Config.demoTerminals): the same key on every re-seed. */
 export const demoTerminalKey = (terminalId: number) => `demo-terminal-${terminalId}`;
 
-export function activateTerminal(ctx: Ctx, activationCode: string) {
+export function activateTerminal(ctx: Ctx, activationCode: string, ip = 'unknown') {
+  // Codes are short enough to type at the pump, so guessing them is slowed down per network address.
+  const ipKey = `activate:${ip}`;
+  assertNotLocked(ctx.db, [ipKey]);
+  const t0 = ctx.db.get(
+    "SELECT id, activation_expires_at < datetime('now') AS expired FROM terminals WHERE activation_code = ? AND status != 'retired'",
+    activationCode.trim().toUpperCase(),
+  );
+  if (!t0 || (t0.expired && !ctx.config.demoTerminals)) {
+    recordFailure(ctx.db, ipKey, RULES.activateIp);
+    if (t0) throw badRequest('code_expired', 'This activation code has expired. Ask the distributor for a new one.');
+    throw notFound('Activation code');
+  }
+  clearFailures(ctx.db, ipKey);
   return ctx.db.tx(() => {
     const t = ctx.db.get(
       "SELECT t.*, s.name AS station_name FROM terminals t JOIN stations s ON s.id = t.station_id WHERE activation_code = ? AND t.status != 'retired'",

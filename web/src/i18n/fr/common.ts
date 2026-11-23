@@ -1,5 +1,13 @@
 // French for UI strings in the common screens, keyed by the English text passed to t().
 export const fr: Record<string, string> = {
+  'Change my password': 'Changer mon mot de passe',
+  'Change password': 'Changer le mot de passe',
+  'Current password': 'Mot de passe actuel',
+  'New password': 'Nouveau mot de passe',
+  'New password again': 'Confirmez le nouveau mot de passe',
+  'The two new passwords do not match.': 'Les deux nouveaux mots de passe ne correspondent pas.',
+  'At least 10 characters. A short sentence is easy to remember and hard to guess. Do not reuse your login.': 'Au moins 10 caractères. Une courte phrase est facile à retenir et difficile à deviner. N’utilisez pas votre identifiant.',
+  'Password changed. Your other devices have been signed out.': 'Mot de passe changé. Vos autres appareils ont été déconnectés.',
   // ---- Enum values as displayed by cap() / Status / roleLabel (capitalised, underscores as spaces)
   // Fuel grades
   'Diesel': 'Diesel',

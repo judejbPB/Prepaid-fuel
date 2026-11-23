@@ -58,7 +58,8 @@ if (persistent) {
   ctx = createCtx(':memory:');
   seedDemo(ctx);
 }
-const app = buildApp(ctx);
+// Vercel sets X-Forwarded-For to the real client, so sign-in limits apply per visitor, not to the whole demo.
+const app = buildApp(ctx, { trustProxy: true });
 if (persistent) attachDemoPersistence(app, persistent);
 // Started on the first request, which carries the OIDC token the store needs.
 let ready: Promise<void> | null = null;

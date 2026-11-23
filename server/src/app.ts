@@ -2,7 +2,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { z, ZodError } from 'zod';
-import { authenticate, DISTRIBUTOR, login, logout, requireRole, type Actor } from './auth.js';
+import { DISTRIBUTOR, authenticate, changePassword, login, logout, requireRole, type Actor } from './auth.js';
 import type { Ctx } from './context.js';
 import { AppError } from './errors.js';
 import { localize, localizePayload, localizeValidation, requestLang } from './i18n.js';
@@ -27,8 +27,10 @@ import * as exc from './services/exceptions.js';
 import * as funding from './services/funding.js';
 import * as red from './services/redemption.js';
 import * as reports from './services/reports.js';
+import { passwordProblem, securityHeaders } from './security.js';
 
 declare module 'fastify' {
+  interface FastifyInstance { routeList: { method: string; url: string }[] }
   interface FastifyRequest {
     actor: Actor;
   }
@@ -37,7 +39,9 @@ declare module 'fastify' {
 const grade = z.enum(['diesel', 'gasoline']);
 const money = z.number().positive().max(1e10);
 const id = z.coerce.number().int().positive();
-const gradeMap = z.record(z.string(), z.number().nonnegative()).default({});
+// Size limits on every list and map in a request (with the 1 MB body limit) keep validation cheap.
+const fewKeys = (max: number) => (o: Record<string, unknown>) => Object.keys(o).length <= max;
+const gradeMap = z.record(z.string(), z.number().nonnegative()).refine(fewKeys(10), 'Too many entries').default({});
 
 export interface AppOptions {
   staticDir?: string;
@@ -50,6 +54,11 @@ export interface AppOptions {
 
 export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? false });
+  securityHeaders(app);
+  // Every route, for the test that checks each protected one refuses an anonymous caller.
+  const routes: { method: string; url: string }[] = [];
+  app.addHook('onRoute', (r) => { for (const m of [r.method].flat()) routes.push({ method: m, url: r.url }); });
+  app.decorate('routeList', routes);
 
   // Messages are written in English; they are translated per request (x-lang header, French by default).
   app.setErrorHandler((err: any, req, reply) => {
@@ -94,12 +103,13 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
     const input = body(z.object({ login: z.string().min(1), password: z.string().min(1) }), req);
     return login(ctx.db, {
       ...input,
+      ip: req.ip,
       deviceId: req.headers['x-device-id'] as string | undefined,
       terminalKey: req.headers['x-terminal-key'] as string | undefined,
     });
   });
 
-  app.post('/api/terminals/activate', async (req) => admin.activateTerminal(ctx, body(z.object({ code: z.string().min(4) }), req).code));
+  app.post('/api/terminals/activate', async (req) => admin.activateTerminal(ctx, body(z.object({ code: z.string().min(4).max(32) }), req).code, req.ip));
 
   // ----------------------------------------------------------------- protected
   app.register(async (api) => {
@@ -116,6 +126,10 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
     api.post('/api/auth/logout', async (req) => {
       logout(ctx.db, bearer(req)!);
       return { ok: true };
+    });
+    api.post('/api/auth/password', async (req) => {
+      const b = body(z.object({ current: z.string().min(1).max(200), next: z.string().min(1).max(200) }), req);
+      return changePassword(ctx.db, req.actor, bearer(req)!, b.current, b.next);
     });
 
     // ---- reference data
@@ -143,7 +157,10 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
     });
     api.post('/api/users', async (req) =>
       admin.createUser(ctx, req.actor, body(z.object({
-        name: z.string().min(2), login: z.string().min(3), password: z.string().min(8),
+        name: z.string().min(2), login: z.string().min(3).max(120), password: z.string().max(200).superRefine((p, c) => {
+          const problem = passwordProblem(p);
+          if (problem) c.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+        }),
         role: z.enum(['dist_admin', 'dist_treasury', 'dist_approver', 'co_preparer', 'co_approver', 'st_manager', 'st_attendant']),
         companyId: id.optional(), stationId: id.optional(),
       }), req)));
@@ -165,7 +182,7 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
 
     // ---- reports assistant: questions in plain language, answered from read-only report tools within the user's scope
     api.post('/api/reports/ask', async (req) =>
-      reportsAi.askReports(ctx, req.actor, body(z.object({ question: z.string(), history: z.array(z.object({ q: z.string(), a: z.string() })).optional() }), req), requestLang(req.headers)));
+      reportsAi.askReports(ctx, req.actor, body(z.object({ question: z.string(), history: z.array(z.object({ q: z.string().max(2000), a: z.string().max(8000) })).max(10).optional() }), req), requestLang(req.headers)));
 
     // ---- suspicious fueling alerts (review only: nothing is blocked or frozen automatically)
     api.get('/api/alerts', async (req) => alerts.listFuelAlerts(ctx, req.actor, z.object({ status: z.enum(['open', 'all']).optional() }).parse(req.query)));
@@ -234,9 +251,9 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
     api.get('/api/accounting/sage/settings', async (req) => sage.getSettings(ctx, req.actor));
     api.post('/api/accounting/sage/settings', async (req) => sage.saveSettings(ctx, req.actor, body(z.object({
       journal: z.string().optional(),
-      accounts: z.record(z.string()).optional(),
-      companies: z.array(z.object({ id, tiers: z.string() })).optional(),
-      stations: z.array(z.object({ id, section: z.string() })).optional(),
+      accounts: z.record(z.string()).refine(fewKeys(100), 'Too many entries').optional(),
+      companies: z.array(z.object({ id, tiers: z.string() })).max(2000).optional(),
+      stations: z.array(z.object({ id, section: z.string() })).max(2000).optional(),
     }), req)));
     api.post('/api/accounting/sage/preview', async (req) => sage.preview(ctx, req.actor, body(period, req)));
     api.post('/api/accounting/sage/export', async (req) =>
@@ -301,7 +318,7 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
     api.post('/api/batches', async (req) =>
       alloc.createBatch(ctx, req.actor, body(z.object({
         companyId: id, title: z.string().min(2),
-        lines: z.array(z.object({ employeeId: id, amount: money })).min(1),
+        lines: z.array(z.object({ employeeId: id, amount: money })).min(1).max(5000),
       }), req)));
     api.post('/api/batches/:id/submit', async (req) => alloc.submitBatch(ctx, req.actor, params(req)));
     api.post('/api/batches/:id/approve', async (req) => alloc.approveBatch(ctx, req.actor, params(req)));
@@ -359,7 +376,7 @@ export function buildApp(ctx: Ctx, opts: AppOptions = {}) {
     api.get('/api/wallet', async (req) => reports.wallet(ctx, req.actor));
     api.post('/api/wallet/enroll', async (req) =>
       admin.enrollDevice(ctx, req.actor, body(z.object({
-        password: z.string(), publicKeyJwk: z.record(z.string(), z.unknown()), pinKey: z.string().max(100),
+        password: z.string(), publicKeyJwk: z.record(z.string(), z.unknown()).refine(fewKeys(20), 'Too many entries'), pinKey: z.string().max(100),
       }), req)));
     api.post('/api/redemptions/:id/dispute', async (req) =>
       exc.raiseDispute(ctx, req.actor, params(req), body(z.object({ reason: z.string().min(3) }), req).reason));

@@ -208,6 +208,15 @@ const EXACT: Record<string, string> = {
   'Choose a period of at most 400 days': 'Choisissez une période de 400 jours au maximum',
   'Choose 3, 6 or 12 months': 'Choisissez 3, 6 ou 12 mois',
   'Choose 12 or 24 months': 'Choisissez 12 ou 24 mois',
+  'Use at least 10 characters': 'Utilisez au moins 10 caractères',
+  'Use at most 200 characters': 'Utilisez au plus 200 caractères',
+  'Use at least 8 characters': 'Utilisez au moins 8 caractères',
+  'This password is too easy to guess': 'Ce mot de passe est trop facile à deviner',
+  'Do not use your login in your password': 'N’utilisez pas votre identifiant dans votre mot de passe',
+  'Choose a password different from the current one': 'Choisissez un mot de passe différent de l’actuel',
+  'Your current password is incorrect': 'Votre mot de passe actuel est incorrect',
+  'Signed out after an hour without activity. Sign in again.': 'Déconnecté après une heure d’inactivité. Reconnectez-vous.',
+  'This activation code has expired. Ask the distributor for a new one.': 'Ce code d’activation a expiré. Demandez-en un nouveau au distributeur.',
   'That point is outside Haiti. Check the latitude and longitude.': 'Ce point est hors d’Haïti. Vérifiez la latitude et la longitude.',
   'Use a month like 2026-09': 'Indiquez un mois au format 2026-09',
   'You cannot enter sales for a future month': 'Impossible de saisir les ventes d’un mois à venir',
@@ -294,6 +303,7 @@ type Rule = [RegExp, (...groups: string[]) => string];
 
 /** Templated messages. Order matters: specific patterns first. */
 const RULES: Rule[] = [
+  [/^Too many failed attempts\. Try again in (.+?) minute\(s\)\.$/, (n) => `Trop de tentatives échouées. Réessayez dans ${n} minute(s).`],
   // auth.ts
   [/^Requires role: (.+)$/, (roles) => `Rôle requis : ${roles.split(' or ').map((r) => ROLE[r] ?? r).join(' ou ')}`],
   [/^This terminal belongs to (.+)\. Sign in with an attendant account for (.+), or activate this device for your own station\.$/,
@@ -361,6 +371,12 @@ export function frenchNumbers(text: string): string {
 // ----------------------------------------------------------------------------- validation (zod) messages
 
 const ZOD_EXACT: Record<string, string> = {
+  'Too many entries': 'Trop d’éléments',
+  'Use at least 10 characters': 'Utilisez au moins 10 caractères',
+  'Use at most 200 characters': 'Utilisez au plus 200 caractères',
+  'Use at least 8 characters': 'Utilisez au moins 8 caractères',
+  'This password is too easy to guess': 'Ce mot de passe est trop facile à deviner',
+  'Do not use your login in your password': 'N’utilisez pas votre identifiant dans votre mot de passe',
   Required: 'Obligatoire',
   'Invalid input': 'Saisie invalide',
   'Expected number, received nan': 'Nombre attendu',

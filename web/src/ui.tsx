@@ -260,8 +260,10 @@ export const roleLabel = (r: string) => ROLE_LABEL[r] ?? cap(r);
 export function Shell({ surface, nav, children }: { surface: Surface; nav: [string, string][]; children: ReactNode }) {
   const me = useMe();
   const logout = useLogout(surface);
+  const [changing, setChanging] = useState(false);
   return (
     <div className="shell">
+      {changing && <ChangePassword surface={surface} onClose={() => setChanging(false)} />}
       <nav className="side">
         <div className="brand"><BrandLogo /></div>
         <div className="surface">{SURFACE_TITLE[surface]}</div>
@@ -270,12 +272,40 @@ export function Shell({ surface, nav, children }: { surface: Surface; nav: [stri
         <div className="who">
           <b>{me.name}</b>
           {roleLabel(me.role)}{me.company ? ` · ${me.company.name}` : ''}{me.station ? ` · ${me.station.name}` : ''}
+          <div><button className="ghost sm" style={{ color: 'var(--accent-on-dark)', paddingLeft: 0 }} onClick={() => setChanging(true)}>{t('Change my password')}</button></div>
           <div><button className="ghost sm" style={{ color: 'var(--accent-on-dark)', paddingLeft: 0 }} onClick={logout}>{t('Sign out')}</button></div>
           <div style={{ marginTop: 8 }}><LangToggle dark /></div>
         </div>
       </nav>
       <main className="main">{children}</main>
     </div>
+  );
+}
+
+/** The signed-in user changes their password; their other signed-in devices are signed out. */
+function ChangePassword({ surface, onClose }: { surface: Surface; onClose: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const { busy, run } = useAction();
+  const mismatch = again !== '' && next !== again;
+  const save = async () => {
+    if (await run(() => api(surface).post('/api/auth/password', { current, next }), t('Password changed. Your other devices have been signed out.'))) onClose();
+  };
+  return (
+    <Modal title={t('Change my password')} onClose={onClose}>
+      <p className="small muted">{t('At least 10 characters. A short sentence is easy to remember and hard to guess. Do not reuse your login.')}</p>
+      <div className="stack">
+        <label>{t('Current password')}<input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></label>
+        <label>{t('New password')}<input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></label>
+        <label>{t('New password again')}<input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} /></label>
+        {mismatch && <div className="small" style={{ color: 'var(--bad)' }}>{t('The two new passwords do not match.')}</div>}
+      </div>
+      <div className="row mt" style={{ justifyContent: 'flex-end' }}>
+        <button className="secondary" onClick={onClose}>{t('Cancel')}</button>
+        <button disabled={busy || !current || !next || next !== again} onClick={save}>{t('Change password')}</button>
+      </div>
+    </Modal>
   );
 }
 

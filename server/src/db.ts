@@ -113,6 +113,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 
+-- Failed sign-ins and activation tries, by key ("login:<login>", "ip:<address>", "activate:<address>"),
+-- so guessing is slowed down even across restarts (security.ts).
+CREATE TABLE IF NOT EXISTS auth_throttle (
+  key TEXT PRIMARY KEY,
+  failures INTEGER NOT NULL,
+  first_at TEXT NOT NULL,
+  locked_until TEXT
+);
+
 CREATE TABLE IF NOT EXISTS funding_requests (
   id INTEGER PRIMARY KEY,
   reference TEXT NOT NULL UNIQUE,
@@ -425,6 +434,9 @@ export class Db {
     // Columns added after the first release: existing databases get them on open (CREATE TABLE IF NOT EXISTS
     // leaves an existing table as it was). Station location and opening hours feed the station map.
     this.addColumns('stations', { lat: 'REAL', lng: 'REAL', hours: 'TEXT' });
+    // Idle sign-out for back-office sessions, and activation codes that expire.
+    this.addColumns('sessions', { last_seen: 'TEXT' });
+    this.addColumns('terminals', { activation_expires_at: 'TEXT' });
   }
 
   private addColumns(table: string, columns: Record<string, string>) {
